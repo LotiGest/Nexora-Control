@@ -1,0 +1,19 @@
+{
+  "name": "Nexora Control",
+  "short_name": "Nexora",
+  "description": "Panel privado de administración de Nexora Systems",
+  "id": "/Nexora-Control/",
+  "start_url": "/Nexora-Control/",
+  "scope": "/Nexora-Control/",
+  "display": "standalone",
+  "background_color": "#061728",
+  "theme_color": "#061728",
+  "icons": [
+    {
+      "src": "./nexora-app-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
