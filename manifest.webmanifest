@@ -10,10 +10,16 @@
   "theme_color": "#061728",
   "icons": [
     {
-      "src": "./nexora-app-icon.svg",
+      "src": "./nexora-icono-n.png",
       "sizes": "any",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./nexora-icono-n.png",
+      "sizes": "any",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ]
 }
