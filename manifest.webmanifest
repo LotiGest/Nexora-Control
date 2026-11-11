@@ -10,16 +10,16 @@
   "theme_color": "#061728",
   "icons": [
     {
-      "src": "./nexora-icono-n.png",
-      "sizes": "any",
-      "type": "image/png",
+      "src": "./nexora-android-icon.svg?v=2",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
       "purpose": "any"
     },
     {
-      "src": "./nexora-icono-n.png",
-      "sizes": "any",
+      "src": "./nexora-icono-n.png?v=2",
+      "sizes": "645x525",
       "type": "image/png",
-      "purpose": "maskable"
+      "purpose": "any"
     }
   ]
 }
