@@ -8,12 +8,20 @@ const TIERS=new Set(['off','basic','full']);
 export class SiacStatusError extends Error{
  constructor(status,message){super(message);this.status=status}
 }
-const nonceBytes=x=>Uint8Array.from(atob(x.replace(/-/g,'+').replace(/_/g,'/')+'='.repeat((4-x.length%4)%4)),c=>c.charCodeAt(0));
 const hex=arr=>Array.from(new Uint8Array(arr)).map(x=>x.toString(16).padStart(2,'0')).join('');
+function readPrivateJwk(source){
+ if(typeof source!=='string'||source.length>1300)throw new SiacStatusError(503,'Clave de firma Nexora no configurada.');
+ let key;
+ try{key=JSON.parse(source)}catch{throw new SiacStatusError(503,'Clave de firma Nexora inválida.')}
+ if(key?.kty!=='EC'||key.crv!=='P-256'||
+  typeof key.x!=='string'||typeof key.y!=='string'||typeof key.d!=='string'||
+  ![key.x,key.y,key.d].every(x=>/^[a-zA-Z0-9_-]{43}$/.test(x)))
+  throw new SiacStatusError(503,'Clave privada de Nexora no válida.');
+ return {kty:'EC',crv:'P-256',x:key.x,y:key.y,d:key.d,ext:true,key_ops:['sign']};
+}
 export function statusConfig(env={}){
- const owner=env.NEXORA_SIAC_OWNER,key=env.NEXORA_SIAC_SHARED_KEY,endpoint=env.NEXORA_SIAC_STATUS_URL;
+ const owner=env.NEXORA_SIAC_OWNER,endpoint=env.NEXORA_SIAC_STATUS_URL;
  if(typeof owner!=='string'||!VALID_OWNER.test(owner)||
-  typeof key!=='string'||!/^[A-Za-z0-9_-]{43}$/.test(key)||
   typeof endpoint!=='string'||!endpoint.startsWith('https://'))
   throw new SiacStatusError(503,'El canal de SIAC todavía no está configurado.');
  let destination;
@@ -22,17 +30,14 @@ export function statusConfig(env={}){
   destination.pathname!=='/api/internal/nexora-license'||destination.search||destination.hash||
   destination.hostname==='localhost'||!destination.hostname.includes('.'))
   throw new SiacStatusError(503,'Destino SIAC no válido.');
- let bytes;
- try{bytes=nonceBytes(key)}catch{throw new SiacStatusError(503,'Clave de SIAC no válida.')}
- if(bytes.length!==32)throw new SiacStatusError(503,'Longitud de clave de SIAC incorrecta.');
- return {owner,endpoint:destination.href,keyBytes:bytes};
+ return {owner,endpoint:destination.href,privateJwk:readPrivateJwk(env.NEXORA_SIAC_PRIVATE_JWK)};
 }
 export async function getSiacLicenseStatus(env={},fetchImpl=fetch,now=Date.now()){
  const settings=statusConfig(env);
  const timestamp=Math.floor(now/1000),nonce=crypto.randomUUID();
  const signed='GET\n/api/internal/nexora-license\n'+timestamp+'\n'+nonce;
- const key=await crypto.subtle.importKey('raw',settings.keyBytes,{name:'HMAC',hash:'SHA-256'},false,['sign']);
- const signature=hex(await crypto.subtle.sign('HMAC',key,new TextEncoder().encode(signed)));
+ const key=await crypto.subtle.importKey('jwk',settings.privateJwk,{name:'ECDSA',namedCurve:'P-256'},false,['sign']);
+ const signature=hex(await crypto.subtle.sign({name:'ECDSA',hash:'SHA-256'},key,new TextEncoder().encode(signed)));
  let response;
  try{
   response=await fetchImpl(settings.endpoint,{method:'GET',headers:{
