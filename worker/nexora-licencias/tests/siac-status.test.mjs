@@ -17,7 +17,7 @@ test('SIAC status uses a fresh HMAC signature and cannot write',async()=>{
   calls++;
   assert.equal(url,env.NEXORA_SIAC_STATUS_URL);
   assert.equal(options.method,'GET');
-  assert.equal(options.redirect,'error');
+  assert.equal(options.redirect,'manual');
   assert.equal(options.body,undefined);
   const t=options.headers['x-nexora-timestamp'],n=options.headers['x-nexora-nonce'];
   const expect=createHmac('sha256',shared).update('GET\n/api/internal/nexora-license\n'+t+'\n'+n).digest('hex');
@@ -89,4 +89,13 @@ test('QA status may never be classified as a real active SIAC license',async()=>
  await assert.rejects(()=>getSiacLicenseStatus(env,
   async()=>new Response(missing,{status:200,headers:{'content-type':'application/json'}}),clock),
   err=>err instanceof SiacStatusError&&err.status===502);
+});
+
+test('Cloudflare manual redirect mode never follows an upstream redirect',async()=>{
+ let count=0;
+ await assert.rejects(()=>getSiacLicenseStatus(env,async()=>{
+  count++;
+  return new Response(null,{status:302,headers:{location:'https://evil.example/api/internal/nexora-license'}});
+ },clock),error=>error instanceof SiacStatusError&&error.status===502);
+ assert.equal(count,1);
 });
