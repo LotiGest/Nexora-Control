@@ -21,3 +21,16 @@ Antes de habilitar activación, necesitamos acceso autorizado al proyecto Fireba
 Sincronizar `src/index.js` y `src/auth.js` mediante carga multi-módulo con `main_module: index.js`. Confirmar que el Worker no tenga bindings D1 y subdominio público permanezca desactivado. No sobrescribir ningún Worker de Lotigest.
 
 El script recibe su primera carga directamente en Cloudflare; no existe un pipeline automático que dé acceso privilegiado a acciones de licencia.
+
+## Validación y despliegue 20/11/2026 (UTC)
+
+Cloudflare aceptó la carga multi-módulo de `src/index.js` y `src/auth.js` del repositorio. El servicio `nexora-licencias` tiene deployment `83be3cbd-38a8-42bf-89f6-c4918dfa0412` con el 100% de la versión `750e08f7-c8ee-4104-94c5-8ad4486950f8`. Se consultó después la configuración real: **0 bindings, 0 secretos, workers.dev y previews desactivados**. Los tres Workers de Lotigest siguen intactos.
+
+La prueba de seguridad de GitHub Actions `44675909969` terminó `success`; aprobaron verificaciones de sintaxis de index/auth/frontend y tests de validación criptográfica de Firebase, permisos, expiración y bloqueo de cambios. No equivale todavía a prueba de conexión con Firebase o SIAC productivos.
+
+## Pendientes de configuración externa
+
+1. **Firebase:** conectar `nexora-control-717c6`, leer las identidades reales autorizadas, revisar reglas existentes, fusionar las reglas de clientes/licencias sin afectar colecciones previas y probar accesos como administradores y tercero denegado.
+2. **Cloudflare:** establecer `NEXORA_ADMIN_UIDS` únicamente mediante secreto del Worker, con UIDs reales obtenidos de Firebase; no ponerlos ni escribir tokens en GitHub.
+3. **SIAC:** conectar la cuenta Cloudflare que aloja la instalación de la clínica, aplicar las migraciones aprobadas a QA, preparar un endpoint mínimo de cambios autorizados con auditoría/idempotencia y validar cambios ficticios en D1 de pruebas.
+4. Revisar el sitio y habilitar un origen de Worker público exclusivamente después de confirmar la verificación de Firebase. Las activaciones continuarán inhabilitadas hasta pasar la aceptación.
