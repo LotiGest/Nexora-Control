@@ -1,0 +1,79 @@
+// MERGE these match blocks into the existing Firebase Firestore rules for nexora-control-717c6.
+// DO NOT replace the entire rules file: supportReports and vaultReferences still need their own protections.
+// These rules contain no service-account secrets or credentials.
+// Place the function and match blocks INSIDE: match /databases/{database}/documents { ... }
+
+function nexoraLicenseAdmin() {
+ return request.auth != null
+  && request.auth.token.email_verified == true
+  && request.auth.token.firebase.sign_in_provider == 'google.com'
+  && request.auth.token.email in ['gerardotorres034@gmail.com', 'danylopez614@gmail.com'];
+}
+function nexoraLicenseOwner(owner) {
+ return owner is string && owner.matches('^[a-z0-9][a-z0-9-]{2,79}$');
+}
+function nexoraLicenseTier(tier) {
+ return tier in ['off','basic','full'];
+}
+function nexoraLicenseDate(value) {
+ return value == null || (value is string && value.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$'));
+}
+match /nexoraClients/{ownerKey} {
+ allow get,list: if nexoraLicenseAdmin();
+ allow create: if nexoraLicenseAdmin()
+  && nexoraLicenseOwner(ownerKey)
+  && request.resource.data.keys().hasOnly(['name','ownerKey','product','createdBy','createdAt','updatedAt'])
+  && request.resource.data.ownerKey == ownerKey
+  && request.resource.data.product == 'SIAC'
+  && request.resource.data.name is string && request.resource.data.name.size() >= 3 && request.resource.data.name.size() <= 100
+  && request.resource.data.createdBy == request.auth.uid
+  && request.resource.data.createdAt == request.time && request.resource.data.updatedAt == request.time;
+ allow update,delete: if false;
+}
+match /nexoraLicenses/{licenseId} {
+ allow get,list: if nexoraLicenseAdmin();
+ allow create,update: if nexoraLicenseAdmin()
+  && request.resource.data.keys().hasOnly(['ownerKey','product','module','tier','expiresOn','contractRef','status','evidenceRef','updatedBy','updatedAt','verifiedAt','verifiedBy'])
+  && nexoraLicenseOwner(request.resource.data.ownerKey)
+  && licenseId == request.resource.data.ownerKey + '-laboratory'
+  && request.resource.data.product == 'SIAC'
+  && request.resource.data.module == 'laboratory'
+  && nexoraLicenseTier(request.resource.data.tier)
+  && nexoraLicenseDate(request.resource.data.expiresOn)
+  && request.resource.data.contractRef is string && request.resource.data.contractRef.size() <= 100
+  && request.resource.data.evidenceRef is string && request.resource.data.evidenceRef.size() <= 140
+  && request.resource.data.updatedBy == request.auth.uid
+  && request.resource.data.updatedAt == request.time
+  && (
+   (request.resource.data.status == 'draft'
+    && request.resource.data.evidenceRef == ''
+    && request.resource.data.verifiedAt == null
+    && request.resource.data.verifiedBy == '')
+   ||
+   (request.resource.data.status == 'verified'
+    && request.resource.data.evidenceRef.size() >= 8
+    && request.resource.data.verifiedBy == request.auth.uid
+    && request.resource.data.verifiedAt == request.time
+    && resource != null && resource.data.status == 'draft'
+    && resource.data.ownerKey == request.resource.data.ownerKey
+    && resource.data.tier == request.resource.data.tier
+    && resource.data.expiresOn == request.resource.data.expiresOn
+    && resource.data.contractRef == request.resource.data.contractRef)
+  );
+ allow delete: if false;
+}
+match /nexoraLicenseEvents/{eventId} {
+ allow get,list: if nexoraLicenseAdmin();
+ allow create: if nexoraLicenseAdmin()
+  && request.resource.data.keys().hasOnly(['ownerKey','product','module','action','tier','expiresOn','reference','actorUid','at'])
+  && nexoraLicenseOwner(request.resource.data.ownerKey)
+  && request.resource.data.product == 'SIAC'
+  && request.resource.data.module == 'laboratory'
+  && request.resource.data.action in ['draft','verified']
+  && nexoraLicenseTier(request.resource.data.tier)
+  && nexoraLicenseDate(request.resource.data.expiresOn)
+  && request.resource.data.reference is string && request.resource.data.reference.size() <= 140
+  && request.resource.data.actorUid == request.auth.uid
+  && request.resource.data.at == request.time;
+ allow update,delete: if false;
+}
