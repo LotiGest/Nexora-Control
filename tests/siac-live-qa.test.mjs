@@ -18,6 +18,7 @@ test('SIAC QA worker health answers without clinical data',async()=>{
  const data=JSON.parse(raw);
  assert.equal(data.service,'siac-license-qa');
  assert.equal(data.readOnly,true);
+ assert.equal(data.ready,true,'QA Worker cannot read its isolated D1');
  assert.equal(data.patient,undefined);
  assert.equal(data.license,undefined);
 });
