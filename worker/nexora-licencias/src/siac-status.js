@@ -47,11 +47,13 @@ export async function getSiacLicenseStatus(env={},fetchImpl=fetch,now=Date.now()
  try{data=await response.json()}catch{throw new SiacStatusError(502,'Respuesta de SIAC no válida.')}
  const tier=data?.license?.laboratory,contracted=data?.license?.contractedLaboratory;
  if(data?.owner!==settings.owner||data?.readOnly!==true||!TIERS.has(tier)||!TIERS.has(contracted)||
-  typeof data?.license?.expired!=='boolean'||typeof data.readAt!=='string')
+  typeof data?.license?.expired!=='boolean'||typeof data.readAt!=='string'||
+  !['qa','production'].includes(data.environment))
   throw new SiacStatusError(502,'SIAC devolvió una licencia que no corresponde a esta instalación.');
  const license={laboratory:tier,contractedLaboratory:contracted,
   expiresOn:data.license.expiresOn??null,expired:data.license.expired,
   source:data.license.source==='nexora'?'nexora':'legacy'};
  return {ok:true,ownerKey:settings.owner,license,verifiedAt:data.readAt,
-  source:'siac_live',readOnly:true,activationEnabled:false};
+  source:data.environment==='production'?'siac_live':'siac_qa',environment:data.environment,
+  readOnly:true,activationEnabled:false};
 }

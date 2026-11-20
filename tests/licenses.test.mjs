@@ -53,7 +53,7 @@ test('worker URL must be configured explicitly and never accept HTTP or credenti
 });
 test('UI never confuses a Firestore draft with verified SIAC subscription',()=>{
  const draft={ownerKey:'siac-clinic-default',tier:'basic',expiresOn:null};
- const live={source:'siac_live',readOnly:true,ownerKey:'siac-clinic-default',verifiedAt:'2026-11-20T06:00:00Z',
+ const live={source:'siac_live',environment:'production',readOnly:true,ownerKey:'siac-clinic-default',verifiedAt:'2026-11-20T06:00:00Z',
   license:{laboratory:'full',contractedLaboratory:'full',expiresOn:null,expired:false}};
  const described=describeLiveLicense(draft,live,'siac-clinic-default');
  assert.equal(described.matches,false);
@@ -61,4 +61,13 @@ test('UI never confuses a Firestore draft with verified SIAC subscription',()=>{
  assert.equal(describeLiveLicense({...draft,tier:'full'},live,'siac-clinic-default').matches,true);
  assert.throws(()=>describeLiveLicense(draft,{...live,ownerKey:'other'},'siac-clinic-default'));
  assert.throws(()=>describeLiveLicense(draft,{...live,source:'firebase_draft'},'siac-clinic-default'));
+});
+
+test('QA license status must never be presented as production verified',()=>{
+ const qa={source:'siac_qa',environment:'qa',readOnly:true,ownerKey:'siac-clinic-default',
+  license:{laboratory:'full',contractedLaboratory:'full',expiresOn:null,expired:false},verifiedAt:'2026-11-20T05:00:00Z'};
+ const ui=describeLiveLicense({ownerKey:'siac-clinic-default',tier:'full'},qa,'siac-clinic-default');
+ assert.equal(ui.matches,false);
+ assert.match(ui.description,/NO verifica/);
+ assert.throws(()=>describeLiveLicense(null,{...qa,source:'siac_live'},'siac-clinic-default'));
 });

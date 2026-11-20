@@ -81,7 +81,11 @@ export function validatedLicenseApiOrigin(value){
  return url.origin;
 }
 export function describeLiveLicense(draft,serverResponse,owner){
- if(serverResponse?.source!=='siac_live'||serverResponse.readOnly!==true||
+ if(serverResponse?.source==='siac_qa'&&serverResponse.environment==='qa'&&serverResponse.readOnly===true&&
+  serverResponse.ownerKey===owner&&['off','basic','full'].includes(serverResponse.license?.laboratory))
+  return {matches:false,description:'Resultado de QA: '+labelTier(serverResponse.license.laboratory)+
+   '. Es una prueba aislada y NO verifica una licencia activa en SIAC de producción.'};
+ if(serverResponse?.source!=='siac_live'||serverResponse.environment!=='production'||serverResponse.readOnly!==true||
   serverResponse.ownerKey!==owner||
   !['off','basic','full'].includes(serverResponse.license?.laboratory)||
   !['off','basic','full'].includes(serverResponse.license?.contractedLaboratory))

@@ -44,3 +44,6 @@ Nueva ruta `POST /api/licenses/preview`, disponible solamente cuando el Worker t
 La ruta protegida GET /api/licenses/status?ownerKey=... verifica el token Firebase del administrador, comprueba que la clínica solicitada coincide exactamente con NEXORA_SIAC_OWNER (configurado en el servidor) y llama a la ruta HMAC firmada GET /api/internal/nexora-license del SIAC. Esta ruta SOLO consulta y nunca activa, desactiva ni elimina licencias.
 
 Requiere variables de entorno secretas: NEXORA_SIAC_OWNER, NEXORA_SIAC_STATUS_URL (HTTPS con ruta exacta), NEXORA_SIAC_SHARED_KEY (Base64URL 32 bytes), además de NEXORA_ADMIN_UIDS. No se han configurado en Cloudflare, por lo que esta API permanecerá inoperativa hasta probar los dos servicios con datos ficticios. El endpoint SIAC está actualmente en una rama de auditoría; todavía NO está publicado.
+
+
+**Ambiente verificado explícitamente (20/11/2026):** la ruta de consulta de SIAC debe devolver `environment: 'qa'|'production'`. Nexora solo etiqueta un resultado como `siac_live` si el servidor informa `production`; las respuestas QA se identifican como `siac_qa` y el panel muestra que NO se verificó una licencia comercial real. Respuestas sin ambiente identificado se rechazan con HTTP 502. La configuración de los secretos sigue pendiente de autorización.

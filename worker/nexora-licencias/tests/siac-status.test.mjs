@@ -9,7 +9,7 @@ const env={NEXORA_SIAC_OWNER:'siac-clinic-default',
  NEXORA_SIAC_STATUS_URL:'https://siac.example/api/internal/nexora-license'};
 const validData={owner:'siac-clinic-default',license:{laboratory:'basic',
  contractedLaboratory:'basic',expired:false,expiresOn:null,source:'nexora'},
- readAt:'2026-11-20T05:00:00Z',readOnly:true};
+ readAt:'2026-11-20T05:00:00Z',readOnly:true,environment:'production'};
 const clock=Date.parse('2026-11-20T05:15:00Z');
 test('SIAC status uses a fresh HMAC signature and cannot write',async()=>{
  let calls=0;
@@ -76,4 +76,17 @@ test('license status never forwards unsolicited SIAC fields to the commercial br
  assert.equal(status.license.temporarySecret,undefined);
  assert.deepEqual(Object.keys(status.license).sort(),
   ['contractedLaboratory','expired','expiresOn','laboratory','source'].sort());
+});
+
+test('QA status may never be classified as a real active SIAC license',async()=>{
+ const status=await getSiacLicenseStatus(env,async()=>new Response(
+  JSON.stringify({...validData,environment:'qa'}),
+  {status:200,headers:{'content-type':'application/json'}}),clock);
+ assert.equal(status.source,'siac_qa');
+ assert.equal(status.environment,'qa');
+ assert.equal(status.activationEnabled,false);
+ const missing=JSON.stringify({...validData,environment:undefined});
+ await assert.rejects(()=>getSiacLicenseStatus(env,
+  async()=>new Response(missing,{status:200,headers:{'content-type':'application/json'}}),clock),
+  err=>err instanceof SiacStatusError&&err.status===502);
 });
