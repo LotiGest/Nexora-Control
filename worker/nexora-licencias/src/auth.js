@@ -27,7 +27,8 @@ function allowlistedUid(secret,uid){
 async function publicSigningKey(kid,now,fetchKeys){
  if(keysCache&&keysCache.until>now&&keysCache.keys.has(kid))return keysCache.keys.get(kid);
  if(!keysCache||keysCache.until<=now){
-  const response=await fetchKeys(JWKS_URL,{redirect:'error',cache:'no-store'});
+  const response=await fetchKeys(JWKS_URL,{redirect:'manual',cache:'no-store'});
+  if(response.status>=300&&response.status<400)throw new AuthFailure(503,'Redirección de claves Firebase no autorizada.');
   if(!response.ok)throw new AuthFailure(503,'No fue posible verificar las firmas de Firebase.');
   const json=await response.json();
   if(!Array.isArray(json.keys)||json.keys.length>12)throw new AuthFailure(503,'Claves de Firebase no disponibles.');
