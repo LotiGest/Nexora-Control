@@ -38,3 +38,9 @@ La prueba de seguridad de GitHub Actions `44675909969` terminó `success`; aprob
 ## Validación de propuestas sin escritura (20/11/2026)
 
 Nueva ruta `POST /api/licenses/preview`, disponible solamente cuando el Worker tenga un secreto `NEXORA_ADMIN_UIDS` y el Firebase ID token firmado corresponda a un administrador admitido. El servidor valida el ID de instalación, nivel, fecha e identificador de solicitud, devuelve el SHA-256 de la propuesta y el estado explícito `validated_not_applied`; **no conecta con Firebase Firestore, SIAC ni D1 y no aplica licencias reales**. Límite de cuerpo JSON: 4 KiB. Otras rutas de licencia responden 503. CORS restringido al origen de GitHub Pages, sin secretos para navegador.
+
+## Verificación del estado real SIAC (sin escrituras)
+
+La ruta protegida GET /api/licenses/status?ownerKey=... verifica el token Firebase del administrador, comprueba que la clínica solicitada coincide exactamente con NEXORA_SIAC_OWNER (configurado en el servidor) y llama a la ruta HMAC firmada GET /api/internal/nexora-license del SIAC. Esta ruta SOLO consulta y nunca activa, desactiva ni elimina licencias.
+
+Requiere variables de entorno secretas: NEXORA_SIAC_OWNER, NEXORA_SIAC_STATUS_URL (HTTPS con ruta exacta), NEXORA_SIAC_SHARED_KEY (Base64URL 32 bytes), además de NEXORA_ADMIN_UIDS. No se han configurado en Cloudflare, por lo que esta API permanecerá inoperativa hasta probar los dos servicios con datos ficticios. El endpoint SIAC está actualmente en una rama de auditoría; todavía NO está publicado.

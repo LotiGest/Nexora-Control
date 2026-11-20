@@ -1,5 +1,6 @@
 import {verifyFirebaseAdmin,AuthFailure} from './auth.js';
 import {readJsonLimited,previewProposal,ProposalError} from './proposal.js';
+import {getSiacLicenseStatus,SiacStatusError} from './siac-status.js';
 /**
  * Nexora Licencias: authenticated, read-only proposal validation.
  * NO SIAC credentials / D1 bindings. Mutations fail closed.
@@ -18,14 +19,14 @@ function reply(status,payload,origin){
  if(origin===ORIGIN){headers['access-control-allow-origin']=ORIGIN;headers['access-control-allow-methods']='GET, POST, OPTIONS';headers['access-control-allow-headers']='authorization, content-type';headers['vary']='Origin'}
  return new Response(JSON.stringify(payload),{status,headers});
 }
-export function createLicenseWorker(verify=verifyFirebaseAdmin){
+export function createLicenseWorker(verify=verifyFirebaseAdmin,fetchSiac=getSiacLicenseStatus){
  return {async fetch(request,env={}){
   const url=new URL(request.url),path=url.pathname,origin=request.headers.get('origin');
-  const recognized=path==='/api/session'||path==='/api/licenses/preview';
+  const recognized=path==='/api/session'||path==='/api/licenses/preview'||path==='/api/licenses/status';
   if(request.method==='OPTIONS'){
    if(origin===ORIGIN&&recognized)return new Response(null,{status:204,headers:{
     'access-control-allow-origin':ORIGIN,
-    'access-control-allow-methods':path==='/api/session'?'GET, OPTIONS':'POST, OPTIONS',
+    'access-control-allow-methods':path==='/api/licenses/preview'?'POST, OPTIONS':'GET, OPTIONS',
     'access-control-allow-headers':'authorization, content-type',
     'access-control-max-age':'600','vary':'Origin','cache-control':'no-store'
    }});
@@ -43,7 +44,7 @@ export function createLicenseWorker(verify=verifyFirebaseAdmin){
    message:'Todavía no está configurada la lista de administradores.'},origin);
   if(!recognized)return reply(503,{error:'activation_not_configured',
    message:'Nexora Licencias no permite modificar ni leer licencias de SIAC.'},origin);
-  if(path==='/api/session'&&request.method!=='GET'||path==='/api/licenses/preview'&&request.method!=='POST')
+  if((path==='/api/session'||path==='/api/licenses/status')&&request.method!=='GET'||path==='/api/licenses/preview'&&request.method!=='POST')
    return reply(405,{error:'method_not_allowed'},origin);
   let admin;
   try{admin=await verify(request.headers.get('authorization'),env)}
@@ -53,6 +54,16 @@ export function createLicenseWorker(verify=verifyFirebaseAdmin){
   }
   if(path==='/api/session')return reply(200,{ok:true,admin:{uid:admin.uid,email:admin.email},
    activationEnabled:false,clinicConnection:false},origin);
+  if(path==='/api/licenses/status'){
+   const requestedOwner=url.searchParams.get('ownerKey')||'';
+   if(!requestedOwner||requestedOwner!==env.NEXORA_SIAC_OWNER)return reply(403,{error:'owner_not_configured',
+    message:'La instalación solicitada no está vinculada a este servidor.'},origin);
+   try{return reply(200,await fetchSiac(env),origin)}
+   catch(err){
+    if(err instanceof SiacStatusError)return reply(err.status,{error:'siac_unavailable',message:err.message},origin);
+    return reply(503,{error:'siac_unavailable',message:'No se pudo obtener una licencia verificada.'},origin);
+   }
+  }
   try{
    const input=await readJsonLimited(request);
    return reply(200,await previewProposal(input),origin);
