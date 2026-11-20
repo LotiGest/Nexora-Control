@@ -38,8 +38,9 @@ export async function getSiacLicenseStatus(env={},fetchImpl=fetch,now=Date.now()
   response=await fetchImpl(settings.endpoint,{method:'GET',headers:{
    'x-nexora-timestamp':String(timestamp),'x-nexora-nonce':nonce,
    'x-nexora-signature':signature,'accept':'application/json'
-  },redirect:'error',cache:'no-store',signal:AbortSignal.timeout(5000)});
+  },redirect:'manual',cache:'no-store',signal:AbortSignal.timeout(5000)});
  }catch{throw new SiacStatusError(502,'No fue posible consultar SIAC de manera segura.')}
+ if(response.status>=300&&response.status<400)throw new SiacStatusError(502,'SIAC devolvió una redirección no autorizada.');
  if(!response.ok)throw new SiacStatusError(502,'SIAC no confirmó la consulta.');
  const type=response.headers.get('content-type')||'';
  if(!type.toLowerCase().includes('application/json'))throw new SiacStatusError(502,'Respuesta de SIAC inesperada.');
