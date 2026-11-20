@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {normalizeClient,normalizeLicense,generateSiacLicenseSql,licenseReviewStatus,validDate,validOwner} from '../license-core.js';
+import {normalizeClient,normalizeLicense,generateSiacLicenseSql,licenseReviewStatus,validDate,validOwner,reviewLicenseChange} from '../license-core.js';
 test('client IDs are installation scoped and canonical',()=>{
  assert.deepEqual(normalizeClient({name:'  Centro   Médico San Marcos  ',ownerKey:'SIAC-CLINIC-DEFAULT'}),{name:'Centro Médico San Marcos',ownerKey:'siac-clinic-default',product:'SIAC'});
  assert.equal(validOwner('siac-clinic-default'),true);
@@ -29,4 +29,18 @@ test('UI status never claims draft is already activated',()=>{
  assert.equal(licenseReviewStatus(null),'Sin propuesta');
  assert.match(licenseReviewStatus({status:'draft'}),/no aplicado/i);
  assert.match(licenseReviewStatus({status:'verified'}),/manualmente/i);
+});
+
+test('plan review explains changes and requires typed confirmation on risky actions',()=>{
+ const old={ownerKey:'siac-clinic-default',tier:'basic',expiresOn:null,contractRef:'Contrato 1',status:'draft'};
+ const full=reviewLicenseChange(old,{...old,tier:'full',expiresOn:'2027-01-20'},'Clínica de prueba');
+ assert.equal(full.requiresTyping,true);
+ assert.match(full.summary,/Básico/);
+ assert.match(full.summary,/Full/);
+ assert.match(full.summary,/2027-01-20/);
+ assert.match(full.summary,/NO cambia la licencia operativa/);
+ assert.equal(reviewLicenseChange(old,{...old,tier:'off'}).requiresTyping,true);
+ assert.equal(reviewLicenseChange(old,{...old,expiresOn:'2026-12-31'}).requiresTyping,true);
+ assert.equal(reviewLicenseChange(old,{...old}).requiresTyping,false);
+ assert.equal(reviewLicenseChange({...old,status:'verified'},{...old}).requiresTyping,true);
 });

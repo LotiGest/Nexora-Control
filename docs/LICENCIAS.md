@@ -27,3 +27,10 @@ Si Firestore devuelve `permission-denied`, no lo resuelvas poniendo las reglas e
 La lógica independiente se puede verificar con `node --test tests/licenses.test.mjs`. Requiere revisión real en navegador, prueba de ambos usuarios, Google popup/redirect, Firestore y modo móvil. Ningún resultado que diga **«Aplicación confirmada manualmente»** debe confundirse con consulta en tiempo real al SIAC; solo Cloudflare D1 es la fuente de verdad de la licencia.
 
 **No se activaron planes Full ni se modificaron servidores SIAC o bases de producción mediante esta implementación.**
+
+
+## Confirmación de cambios críticos (20/11/2026)
+
+El formulario guarda borradores únicamente tras pulsar **Guardar propuesta**, revisar el resumen de cliente/plan/vencimiento en un diálogo y marcar la casilla de autorización. Para cambiar a **Full** o **Desactivado**, alterar planes/vencimientos anteriores, o modificar un plan ya confirmado, también se debe escribir **CONFIRMAR**. El cliente nuevo también requiere una confirmación separada.
+
+La declaración de aplicación en D1 tiene un segundo diálogo más estricto, con texto **CONFIRMAR** y resumen de la referencia. Una cancelación o Escape no ejecuta escrituras. Los cambios a Firestore utilizan una **transacción** que comprueba si otro administrador modificó la licencia desde la última revisión y, si ha cambiado, cancela la operación en vez de sobrescribirla. Esto no sustituye la seguridad del servidor ni las reglas de Firestore. Guardar propuestas sigue sin modificar SIAC automáticamente.

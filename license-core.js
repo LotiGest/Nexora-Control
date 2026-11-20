@@ -48,3 +48,23 @@ export function generateSiacLicenseSql(input) {
   'COMMIT;'
  ].join('\n');
 }
+
+/** Human-readable preview of a proposed commercial change, never an SIAC activation. */
+export function reviewLicenseChange(previous,input,clinicName=''){
+ const next=normalizeLicense(input),old=previous?normalizeLicense(previous):null;
+ const sensitive=next.tier==='off'||next.tier==='full'||previous?.status==='verified'||(old!==null&&(old.tier!==next.tier||old.expiresOn!==next.expiresOn));
+ return {
+  requiresTyping:Boolean(sensitive),
+  summary:[
+   'Clínica: '+(clinicName||next.ownerKey),
+   'Instalación SIAC: '+next.ownerKey,
+   'Propuesta anterior: '+(old?labelTier(old.tier):'Ninguna'),
+   'Propuesta nueva: '+labelTier(next.tier),
+   'Vencimiento anterior: '+(old?(old.expiresOn||'Sin fecha'):'No establecido'),
+   'Vencimiento nuevo: '+(next.expiresOn||'Sin vencimiento'),
+   'Contrato: '+(next.contractRef||'Sin referencia'),
+   '',
+   'IMPORTANTE: guardar esta propuesta NO cambia la licencia operativa ni los datos clínicos de SIAC.'
+  ].join('\n')
+ };
+}

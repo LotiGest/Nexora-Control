@@ -1,5 +1,5 @@
-import {collection,doc,getDoc,query,orderBy,limit,onSnapshot,serverTimestamp,writeBatch} from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js';
-import {normalizeClient,normalizeLicense,labelTier,licenseReviewStatus,generateSiacLicenseSql} from './license-core.js';
+import {collection,doc,getDoc,query,orderBy,limit,onSnapshot,serverTimestamp,runTransaction} from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js';
+import {normalizeClient,normalizeLicense,labelTier,licenseReviewStatus,generateSiacLicenseSql,reviewLicenseChange} from './license-core.js';
 
 /** Only call start() after Firebase Auth verifies an approved Nexora administrator. */
 export function mountLicenses({auth,db}){
@@ -10,6 +10,45 @@ export function mountLicenses({auth,db}){
  if(!clientForm||!draftForm||!clientList||!details||!eventsList)throw Error('No está disponible el panel de licencias.');
  let clients=[],licenses=[],events=[],selected='',subscriptions=[],active=false,busy=false,editorOwner='',lastLicenseSignature='',draftDirty=false,generation=0;
  const msg=(text,error=false)=>{const el=$('licenses-status');el.textContent=text;el.dataset.error=error?'true':'false'};
+ const dialog=$('license-confirm-dialog');
+ const dialogCheck=$('license-confirm-check'),dialogWord=$('license-confirm-word');
+ const dialogAccept=$('license-confirm-accept'),dialogCancel=$('license-confirm-cancel');
+ if(!dialog||!dialogCheck||!dialogWord||!dialogAccept||!dialogCancel)throw Error('Falta la ventana de confirmación de licencias.');
+ /** Resets on every use; closing with Escape or logout never authorizes a write. */
+ function requireConfirmation({title,summary,warning,requiresTyping=false,actionLabel='Confirmar cambio'}){
+  if(!active||!auth.currentUser||dialog.open)return Promise.resolve(false);
+  $('license-confirm-title').textContent=title;
+  $('license-confirm-summary').textContent=summary;
+  $('license-confirm-warning').textContent=warning;
+  $('license-confirm-word-label').hidden=!requiresTyping;
+  dialogCheck.checked=false;dialogWord.value='';dialogAccept.disabled=true;
+  dialogAccept.textContent=actionLabel;
+  return new Promise(resolve=>{
+   let completed=false;
+   const update=()=>{dialogAccept.disabled=!dialogCheck.checked||(requiresTyping&&dialogWord.value.trim().toUpperCase()!=='CONFIRMAR')};
+   const finish=value=>{
+    if(completed)return;
+    completed=true;
+    dialogCheck.removeEventListener('change',update);dialogWord.removeEventListener('input',update);
+    dialogAccept.removeEventListener('click',accept);dialogCancel.removeEventListener('click',cancel);
+    dialog.removeEventListener('cancel',onCancel);dialog.removeEventListener('close',onClose);
+    if(dialog.open)dialog.close();
+    resolve(Boolean(value&&active&&auth.currentUser));
+   };
+   const accept=()=>{if(!dialogAccept.disabled)finish(true)};
+   const cancel=()=>finish(false);
+   const onCancel=e=>{e.preventDefault();finish(false)};
+   const onClose=()=>finish(false);
+   dialogCheck.addEventListener('change',update);dialogWord.addEventListener('input',update);
+   dialogAccept.addEventListener('click',accept);dialogCancel.addEventListener('click',cancel);
+   dialog.addEventListener('cancel',onCancel);dialog.addEventListener('close',onClose);
+   dialog.showModal();dialogCheck.focus();
+  });
+ }
+ const licenseFingerprint=record=>record?JSON.stringify([
+  record.ownerKey,record.module,record.tier,record.expiresOn??null,record.contractRef??'',record.status,record.evidenceRef??'',
+  record.updatedAt?.seconds??null,record.updatedAt?.nanoseconds??null
+ ]):'empty';
  const element=(tag,cls,text)=>{const e=document.createElement(tag);if(cls)e.className=cls;if(text!==undefined)e.textContent=text;return e};
  const label=()=>clients.find(c=>c.ownerKey===selected);
  const current=()=>licenses.find(x=>x.ownerKey===selected&&x.module==='laboratory');
@@ -69,39 +108,77 @@ export function mountLicenses({auth,db}){
    eventsList.append(card);
   }
  }
- async function commitWithAudit(license,action,reference=''){
+ async function commitWithAudit(license,action,reference='',expectedFingerprint='empty'){
   const user=auth.currentUser;
   if(!active||!user)throw Error('Iniciá sesión nuevamente para continuar.');
-  const batch=writeBatch(db);
-  const data={...license,status:action==='verified'?'verified':'draft',evidenceRef:action==='verified'?reference:'',updatedBy:user.uid,updatedAt:serverTimestamp()};
-  if(action==='verified'){data.verifiedAt=serverTimestamp();data.verifiedBy=user.uid;}
-  else{data.verifiedAt=null;data.verifiedBy='';}
-  batch.set(doc(db,'nexoraLicenses',license.ownerKey+'-laboratory'),data);
-  batch.set(doc(collection(db,'nexoraLicenseEvents')),{ownerKey:license.ownerKey,product:'SIAC',module:'laboratory',action,tier:license.tier,expiresOn:license.expiresOn,reference,actorUid:user.uid,at:serverTimestamp()});
-  await batch.commit();
+  const target=doc(db,'nexoraLicenses',license.ownerKey+'-laboratory');
+  const event=doc(collection(db,'nexoraLicenseEvents'));
+  await runTransaction(db,async transaction=>{
+   const before=await transaction.get(target);
+   const previous=before.exists()?before.data():null;
+   if(licenseFingerprint(previous)!==expectedFingerprint)throw Error('Esta licencia cambió en otra sesión. Revisá la versión actual antes de guardar.');
+   if(action==='verified'&&(!previous||previous.status!=='draft'||previous.tier!==license.tier||
+     previous.expiresOn!==license.expiresOn||previous.contractRef!==license.contractRef))
+    throw Error('La propuesta cambió. Volvé a revisarla antes de confirmar su aplicación.');
+   const data={...license,status:action==='verified'?'verified':'draft',
+    evidenceRef:action==='verified'?reference:'',updatedBy:user.uid,updatedAt:serverTimestamp()};
+   if(action==='verified'){data.verifiedAt=serverTimestamp();data.verifiedBy=user.uid;}
+   else{data.verifiedAt=null;data.verifiedBy='';}
+   transaction.set(target,data);
+   transaction.set(event,{ownerKey:license.ownerKey,product:'SIAC',module:'laboratory',action,
+    tier:license.tier,expiresOn:license.expiresOn,reference,actorUid:user.uid,at:serverTimestamp()});
+  });
  }
  clientForm.addEventListener('submit',async event=>{
   event.preventDefault();if(!active||busy)return;
+  const submit=clientForm.querySelector('[type="submit"]');
   try{
    const client=normalizeClient({name:$('license-new-client').value,ownerKey:$('license-new-owner').value});
-   busy=true;clientForm.querySelector('[type="submit"]').disabled=true;
+   const uid=auth.currentUser?.uid,epoch=generation;
+   if(!uid)return;
+   busy=true;submit.disabled=true;
+   const authorized=await requireConfirmation({
+    title:'Confirmar registro de clínica',
+    summary:'Nombre: '+client.name+'\\nInstalación SIAC: '+client.ownerKey+
+     '\\n\\nEste registro es una ficha comercial. NO crea otra instalación SIAC ni le concede licencia Premium.',
+    warning:'Revisá especialmente el identificador técnico de la instalación: después no se podrá editar desde esta pantalla.',
+    actionLabel:'Confirmar registro'
+   });
+   if(!authorized||!active||generation!==epoch||auth.currentUser?.uid!==uid)return;
    const target=doc(db,'nexoraClients',client.ownerKey);
-   if((await getDoc(target)).exists())throw Error('Ese identificador ya tiene una ficha. Seleccionala de la lista.');
-   const batch=writeBatch(db);batch.set(target,{...client,createdBy:auth.currentUser.uid,createdAt:serverTimestamp(),updatedAt:serverTimestamp()});await batch.commit();
+   await runTransaction(db,async tx=>{
+    if((await tx.get(target)).exists())throw Error('Ese identificador ya tiene una ficha. Seleccionala de la lista.');
+    tx.set(target,{...client,createdBy:uid,createdAt:serverTimestamp(),updatedAt:serverTimestamp()});
+   });
    selected=client.ownerKey;clientForm.reset();msg('Cliente creado y sincronizado. Ahora elegí su plan de Laboratorio.');
   }catch(e){msg('No se pudo guardar el cliente: '+(e.code==='permission-denied'?'Firestore denegó el acceso. Revisá las reglas de seguridad.':e.message),true)}
-  finally{busy=false;clientForm.querySelector('[type="submit"]').disabled=false}
+  finally{busy=false;submit.disabled=false}
  });
  draftForm.addEventListener('input',()=>{draftDirty=true});
  draftForm.addEventListener('submit',async event=>{
   event.preventDefault();if(!active||busy||!label())return;
+  const submit=draftForm.querySelector('[type="submit"]');
   try{
-   const license=normalizeLicense({ownerKey:selected,tier:$('license-plan').value,expiresOn:$('license-expires').value,contractRef:$('license-contract').value});
-   busy=true;draftForm.querySelector('[type="submit"]').disabled=true;
-   await commitWithAudit(license,'draft');draftDirty=false;
+   const license=normalizeLicense({ownerKey:selected,tier:$('license-plan').value,
+    expiresOn:$('license-expires').value,contractRef:$('license-contract').value});
+   const previous=current(),expected=licenseFingerprint(previous),ownerAtStart=selected,epoch=generation,uid=auth.currentUser?.uid;
+   const review=reviewLicenseChange(previous,license,label()?.name);
+   if(!uid)return;
+   busy=true;submit.disabled=true;
+   const approved=await requireConfirmation({
+    title:'Revisar antes de guardar',
+    summary:review.summary,
+    warning:'Esto solamente guarda una PROPUESTA comercial. No cambia SIAC, pero sí quedará registrada en Firestore y en el historial.',
+    requiresTyping:review.requiresTyping,
+    actionLabel:'Guardar propuesta confirmada'
+   });
+   if(!approved){msg('Cambio cancelado. No se guardó ninguna propuesta.');return}
+   if(!active||generation!==epoch||selected!==ownerAtStart||auth.currentUser?.uid!==uid)return;
+   await commitWithAudit(license,'draft','',expected);
+   draftDirty=false;
    msg('Propuesta guardada en Nexora Control. NO está aplicada en la base SIAC.');
   }catch(e){msg('No se pudo guardar la propuesta: '+(e.code==='permission-denied'?'Firestore denegó la escritura. Revisá las reglas.':e.message),true)}
-  finally{busy=false;draftForm.querySelector('[type="submit"]').disabled=false}
+  finally{busy=false;submit.disabled=false}
  });
  $('license-copy-sql').addEventListener('click',async()=>{
   if(!active||!label())return;
@@ -119,18 +196,30 @@ export function mountLicenses({auth,db}){
   const original=current(),reference=$('license-verification').value.trim();
   if(!original||original.status==='verified'||draftDirty){msg('Guardá primero la propuesta y sus cambios antes de confirmar.',true);return}
   if(reference.length<8||reference.length>140){msg('Ingresá una referencia de verificación (8 a 140 caracteres), por ejemplo un identificador de operación D1.',true);return}
-  if(!confirm('Confirmá únicamente si verificaste en la base D1 de SIAC que el cambio se aplicó exactamente con esos valores. Nexora Control NO realiza esta comprobación automáticamente. ¿Registrar confirmación manual?'))return;
+  const expected=licenseFingerprint(original),ownerAtStart=selected,epoch=generation,uid=auth.currentUser?.uid;
+  if(!uid)return;
   try{
    busy=true;$('license-verify').disabled=true;
+   const accepted=await requireConfirmation({
+    title:'Confirmación externa de SIAC',
+    summary:'Clínica: '+label().name+' ('+ownerAtStart+')\\nPlan declarado: '+labelTier(original.tier)+
+     '\\nVencimiento: '+(original.expiresOn||'Sin fecha')+
+     '\\nReferencia de D1: '+reference,
+    warning:'ATENCIÓN: estás declarando que revisaste la D1 correcta y que la licencia YA fue aplicada allí. Nexora Control NO la comprueba ni la activa automáticamente.',
+    requiresTyping:true,
+    actionLabel:'Registrar declaración manual'
+   });
+   if(!accepted){msg('Declaración cancelada. No se cambió el estado de la propuesta.');return}
+   if(!active||generation!==epoch||selected!==ownerAtStart||auth.currentUser?.uid!==uid)return;
    const {status,evidenceRef,updatedBy,updatedAt,verifiedAt,verifiedBy,...data}=original;
-   await commitWithAudit(normalizeLicense(data),'verified',reference);
+   await commitWithAudit(normalizeLicense(data),'verified',reference,expected);
    msg('Verificación MANUAL registrada. El panel no comprueba automáticamente la licencia real en SIAC.');
   }catch(e){msg('No se pudo registrar la verificación: '+(e.message||e.code),true)}
   finally{busy=false;$('license-verify').disabled=false}
  });
  $('license-filter').addEventListener('input',renderClients);
  function stop(){
-  active=false;for(const unsubscribe of subscriptions)unsubscribe();subscriptions=[];
+  active=false;if(dialog.open)dialog.close();for(const unsubscribe of subscriptions)unsubscribe();subscriptions=[];
   generation++;clients=[];licenses=[];events=[];selected='';editorOwner='';lastLicenseSignature='';draftDirty=false;
   renderClients();renderSelection();renderEvents();
   $('license-new-client').value='';$('license-new-owner').value='';
