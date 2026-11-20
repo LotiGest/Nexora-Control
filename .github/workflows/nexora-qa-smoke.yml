@@ -1,0 +1,20 @@
+name: Nexora x SIAC QA public-surface smoke
+on:
+  push:
+    paths:
+      - "tests/siac-live-qa.test.mjs"
+      - ".github/workflows/nexora-qa-smoke.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  qa-readonly:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Verify SIAC QA has no unauthenticated license access
+        run: node --test tests/siac-live-qa.test.mjs
