@@ -23,6 +23,8 @@ test('SIAC QA worker health answers without clinical data',async()=>{
 });
 test('unsigned license status cannot expose information',async()=>{
  const {response,raw}=await get('/api/internal/nexora-license');
+ const category=(()=>{try{return JSON.parse(raw).error}catch{return 'non_json'}})();
+ console.log('Unsigned QA license result:',response.status,'sanitized_category:',category);
  assert.ok([401,503].includes(response.status),'Unprotected status route: '+response.status+' '+raw);
  assert.equal(raw.includes('patient'),false);
  assert.equal(raw.includes('laboratory'),false);
