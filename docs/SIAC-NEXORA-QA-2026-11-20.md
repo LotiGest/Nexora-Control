@@ -41,3 +41,18 @@ Fecha de comprobación: 20/11/2026. Este informe documenta observaciones de Clou
 - [ ] Consulta autenticada y firmada desde Nexora hacia QA.
 - [ ] Compilación y pruebas de SIAC integrado.
 - [ ] Activación automática QA y luego publicación controlada de producción.
+
+## Actualización del 20/11/2026: canal asimétrico entre cuentas
+
+Para no transferir una contraseña entre dos conexiones Cloudflare, se sustituyó el protocolo HMAC de QA por **ECDSA P-256 / SHA-256**:
+
+- Se generó el par de claves en la cuenta Cloudflare de Nexora; la privada se guardó directamente como secreto `NEXORA_SIAC_PRIVATE_JWK` de `nexora-licencias`. Nunca se mostró ni transfirió su valor.
+- Solo la clave **pública** se configuró como `SIAC_NEXORA_PUBLIC_JWK` en `siac-license-qa` (cuenta GjTorres).
+- El QA Worker se actualizó para verificar firmas P-256 y continuar con su único binding D1 `siac-test-isolated`.
+- Se eliminó la clave HMAC anterior del Worker QA. El endpoint integrado de SIAC, aún **solo en la rama de auditoría**, también quedó adaptado a P-256.
+- Las pruebas unitarias de Nexora para firma ECDSA, redirecciones, validación de respuestas y separación QA/producción pasaron en GitHub Actions (`44781473062`).
+- Se abrió brevemente un diagnóstico que solo devolvía si la consulta QA verificó. **El acceso público del Worker Nexora volvió a deshabilitarse y su código normal se restauró.** Se borró el workflow temporal.
+- El diagnóstico desde GitHub Actions verificó que el Worker de Nexora puede consultar el `GET /health` de SIAC QA (HTTP 200). La petición **firmada de licencia devolvió HTTP 503**. La consulta SQL directa a la D1 aislada funciona, pero todavía no está identificado el motivo del 503 en la ruta Worker. **No afirmar que la comunicación firmada quedó validada**.
+- No se ha configurado `NEXORA_ADMIN_UIDS`; no se han desplegado reglas Firestore; no hay operaciones de activación y SIAC producción permanece inalterado.
+
+**Pendiente inmediato:** investigar el 503 mediante observabilidad de Cloudflare y pruebas autorizadas con respuestas de error sanitizadas, confirmar E2E firmado en QA, publicar/verificar las reglas de Firebase con el conector administrativo, y solo entonces decidir la implementación de activación real con auditoría e idempotencia. No crear ni habilitar un acceso público de administración de licencias para solucionar el error.
