@@ -139,8 +139,8 @@ export function mountLicenses({auth,db}){
    busy=true;submit.disabled=true;
    const authorized=await requireConfirmation({
     title:'Confirmar registro de clínica',
-    summary:'Nombre: '+client.name+'\\nInstalación SIAC: '+client.ownerKey+
-     '\\n\\nEste registro es una ficha comercial. NO crea otra instalación SIAC ni le concede licencia Premium.',
+    summary:'Nombre: '+client.name+'\nInstalación SIAC: '+client.ownerKey+
+     '\n\nEste registro es una ficha comercial. NO crea otra instalación SIAC ni le concede licencia Premium.',
     warning:'Revisá especialmente el identificador técnico de la instalación: después no se podrá editar desde esta pantalla.',
     actionLabel:'Confirmar registro'
    });
@@ -202,9 +202,9 @@ export function mountLicenses({auth,db}){
    busy=true;$('license-verify').disabled=true;
    const accepted=await requireConfirmation({
     title:'Confirmación externa de SIAC',
-    summary:'Clínica: '+label().name+' ('+ownerAtStart+')\\nPlan declarado: '+labelTier(original.tier)+
-     '\\nVencimiento: '+(original.expiresOn||'Sin fecha')+
-     '\\nReferencia de D1: '+reference,
+    summary:'Clínica: '+label().name+' ('+ownerAtStart+')\nPlan declarado: '+labelTier(original.tier)+
+     '\nVencimiento: '+(original.expiresOn||'Sin fecha')+
+     '\nReferencia de D1: '+reference,
     warning:'ATENCIÓN: estás declarando que revisaste la D1 correcta y que la licencia YA fue aplicada allí. Nexora Control NO la comprueba ni la activa automáticamente.',
     requiresTyping:true,
     actionLabel:'Registrar declaración manual'
