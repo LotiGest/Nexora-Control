@@ -34,3 +34,7 @@ La prueba de seguridad de GitHub Actions `44675909969` terminó `success`; aprob
 2. **Cloudflare:** establecer `NEXORA_ADMIN_UIDS` únicamente mediante secreto del Worker, con UIDs reales obtenidos de Firebase; no ponerlos ni escribir tokens en GitHub.
 3. **SIAC:** conectar la cuenta Cloudflare que aloja la instalación de la clínica, aplicar las migraciones aprobadas a QA, preparar un endpoint mínimo de cambios autorizados con auditoría/idempotencia y validar cambios ficticios en D1 de pruebas.
 4. Revisar el sitio y habilitar un origen de Worker público exclusivamente después de confirmar la verificación de Firebase. Las activaciones continuarán inhabilitadas hasta pasar la aceptación.
+
+## Validación de propuestas sin escritura (20/11/2026)
+
+Nueva ruta `POST /api/licenses/preview`, disponible solamente cuando el Worker tenga un secreto `NEXORA_ADMIN_UIDS` y el Firebase ID token firmado corresponda a un administrador admitido. El servidor valida el ID de instalación, nivel, fecha e identificador de solicitud, devuelve el SHA-256 de la propuesta y el estado explícito `validated_not_applied`; **no conecta con Firebase Firestore, SIAC ni D1 y no aplica licencias reales**. Límite de cuerpo JSON: 4 KiB. Otras rutas de licencia responden 503. CORS restringido al origen de GitHub Pages, sin secretos para navegador.
