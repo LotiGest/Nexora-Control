@@ -1,14 +1,17 @@
 import {collection,doc,getDoc,query,orderBy,limit,onSnapshot,serverTimestamp,runTransaction} from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js';
-import {normalizeClient,normalizeLicense,labelTier,licenseReviewStatus,generateSiacLicenseSql,reviewLicenseChange} from './license-core.js';
+import {normalizeClient,normalizeLicense,labelTier,licenseReviewStatus,generateSiacLicenseSql,reviewLicenseChange,validatedLicenseApiOrigin,describeLiveLicense} from './license-core.js';
+import {NEXORA_LICENSE_API_BASE_URL} from './license-api-config.js';
 
 /** Only call start() after Firebase Auth verifies an approved Nexora administrator. */
 export function mountLicenses({auth,db}){
  const $=id=>document.getElementById(id);
  const clientForm=$('license-client-form'),draftForm=$('license-draft-form');
  const clientList=$('license-clients-list'),details=$('license-editor');
- const eventsList=$('license-events-list');
- if(!clientForm||!draftForm||!clientList||!details||!eventsList)throw Error('No está disponible el panel de licencias.');
+ const eventsList=$('license-events-list'),liveButton=$('license-live-check'),liveStatus=$('license-live-status');
+ if(!clientForm||!draftForm||!clientList||!details||!eventsList||!liveButton||!liveStatus)throw Error('No está disponible el panel de licencias.');
  let clients=[],licenses=[],events=[],selected='',subscriptions=[],active=false,busy=false,editorOwner='',lastLicenseSignature='',draftDirty=false,generation=0;
+ let apiOrigin=null;try{apiOrigin=validatedLicenseApiOrigin(NEXORA_LICENSE_API_BASE_URL)}catch{apiOrigin=null}
+ liveButton.disabled=!apiOrigin;
  const msg=(text,error=false)=>{const el=$('licenses-status');el.textContent=text;el.dataset.error=error?'true':'false'};
  const dialog=$('license-confirm-dialog');
  const dialogCheck=$('license-confirm-check'),dialogWord=$('license-confirm-word');
@@ -74,7 +77,7 @@ export function mountLicenses({auth,db}){
   const changedOwner=editorOwner!==selected;
   const signature=JSON.stringify([license?.tier,license?.expiresOn,license?.contractRef,license?.status,license?.evidenceRef]);
   const changedLicense=signature!==lastLicenseSignature;
-  if(changedOwner){editorOwner=selected;draftDirty=false;}
+  if(changedOwner){editorOwner=selected;draftDirty=false;liveStatus.textContent=apiOrigin?'Seleccioná «Consultar licencia real» para verificar la instalación.':'Conexión de consulta pendiente de configurar. Ningún borrador se aplica automáticamente.';liveButton.disabled=!apiOrigin;}
   if(changedLicense)lastLicenseSignature=signature;
   $('license-client-name').textContent=customer.name;
   $('license-client-owner').textContent=customer.ownerKey;
@@ -86,6 +89,7 @@ export function mountLicenses({auth,db}){
    $('license-contract').value=license?.contractRef||'';
   }
   if(changedOwner||changedLicense){
+   if(changedLicense)liveStatus.textContent=apiOrigin?'La propuesta cambió. Consultá SIAC de nuevo para comparar.':'Conexión de consulta pendiente de configurar.';
    $('license-verification').value='';
    $('license-sql-preview').hidden=true;
    $('license-sql-preview').textContent='';
@@ -217,9 +221,31 @@ export function mountLicenses({auth,db}){
   }catch(e){msg('No se pudo registrar la verificación: '+(e.message||e.code),true)}
   finally{busy=false;$('license-verify').disabled=false}
  });
+ liveButton.addEventListener('click',async()=>{
+  if(!active||!apiOrigin||!selected||busy||liveButton.disabled)return;
+  const user=auth.currentUser,ownerAtStart=selected,epoch=generation;
+  if(!user){liveStatus.textContent='Iniciá sesión con Google para verificar licencias.';return}
+  liveButton.disabled=true;liveStatus.textContent='Consultando estado real de SIAC, sin modificar datos…';
+  try{
+   const token=await user.getIdToken();
+   if(!active||epoch!==generation||selected!==ownerAtStart||auth.currentUser?.uid!==user.uid)return;
+   const response=await fetch(apiOrigin+'/api/licenses/status?ownerKey='+encodeURIComponent(ownerAtStart),{
+    method:'GET',headers:{authorization:'Bearer '+token,accept:'application/json'},
+    cache:'no-store',redirect:'error',credentials:'omit'
+   });
+   if(!response.ok)throw Error('El servidor no confirmó la consulta (HTTP '+response.status+'). Revisá la autorización y la conexión con SIAC.');
+   const result=await response.json();
+   if(!active||epoch!==generation||selected!==ownerAtStart||auth.currentUser?.uid!==user.uid)return;
+   const status=describeLiveLicense(current(),result,ownerAtStart);
+   liveStatus.textContent=status.description;
+   liveStatus.dataset.matches=status.matches?'true':'false';
+  }catch(e){
+   if(active&&epoch===generation&&selected===ownerAtStart){liveStatus.textContent='Estado real no verificado: '+(e.message||'Conexión no disponible.');liveStatus.dataset.matches='unknown';}
+  }finally{liveButton.disabled=!apiOrigin}
+ });
  $('license-filter').addEventListener('input',renderClients);
  function stop(){
-  active=false;if(dialog.open)dialog.close();for(const unsubscribe of subscriptions)unsubscribe();subscriptions=[];
+  active=false;liveButton.disabled=true;liveStatus.textContent='Iniciá sesión para consultar el estado real.';if(dialog.open)dialog.close();for(const unsubscribe of subscriptions)unsubscribe();subscriptions=[];
   generation++;clients=[];licenses=[];events=[];selected='';editorOwner='';lastLicenseSignature='';draftDirty=false;
   renderClients();renderSelection();renderEvents();
   $('license-new-client').value='';$('license-new-owner').value='';
@@ -227,7 +253,7 @@ export function mountLicenses({auth,db}){
  }
  function start(){
   if(active)return;
-  active=true;const thisGeneration=++generation;msg('Sincronizando clientes, licencias y auditoría desde Firestore…');
+  active=true;liveButton.disabled=!apiOrigin;const thisGeneration=++generation;msg('Sincronizando clientes, licencias y auditoría desde Firestore…');
   const streams=[
    {name:'clientes',collection:'nexoraClients',update:docs=>{clients=docs.map(x=>x.data());renderClients();renderSelection()}},
    {name:'licencias',collection:'nexoraLicenses',update:docs=>{licenses=docs.map(x=>x.data());renderClients();renderSelection()}},

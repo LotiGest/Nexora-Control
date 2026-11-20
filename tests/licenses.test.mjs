@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {normalizeClient,normalizeLicense,generateSiacLicenseSql,licenseReviewStatus,validDate,validOwner,reviewLicenseChange} from '../license-core.js';
+import {normalizeClient,normalizeLicense,generateSiacLicenseSql,licenseReviewStatus,validDate,validOwner,reviewLicenseChange,validatedLicenseApiOrigin,describeLiveLicense} from '../license-core.js';
 test('client IDs are installation scoped and canonical',()=>{
  assert.deepEqual(normalizeClient({name:'  Centro   Médico San Marcos  ',ownerKey:'SIAC-CLINIC-DEFAULT'}),{name:'Centro Médico San Marcos',ownerKey:'siac-clinic-default',product:'SIAC'});
  assert.equal(validOwner('siac-clinic-default'),true);
@@ -43,4 +43,22 @@ test('plan review explains changes and requires typed confirmation on risky acti
  assert.equal(reviewLicenseChange(old,{...old,expiresOn:'2026-12-31'}).requiresTyping,true);
  assert.equal(reviewLicenseChange(old,{...old}).requiresTyping,false);
  assert.equal(reviewLicenseChange({...old,status:'verified'},{...old}).requiresTyping,true);
+});
+
+test('worker URL must be configured explicitly and never accept HTTP or credentials',()=>{
+ assert.equal(validatedLicenseApiOrigin(''),null);
+ assert.equal(validatedLicenseApiOrigin('https://api.nexora.example/'),'https://api.nexora.example');
+ for(const value of ['http://api.nexora.example','https://person:secret@api.nexora.example','https://localhost','https://api.nexora.example/api','https://api.nexora.example/?token=123'])
+  assert.throws(()=>validatedLicenseApiOrigin(value));
+});
+test('UI never confuses a Firestore draft with verified SIAC subscription',()=>{
+ const draft={ownerKey:'siac-clinic-default',tier:'basic',expiresOn:null};
+ const live={source:'siac_live',readOnly:true,ownerKey:'siac-clinic-default',verifiedAt:'2026-11-20T06:00:00Z',
+  license:{laboratory:'full',contractedLaboratory:'full',expiresOn:null,expired:false}};
+ const described=describeLiveLicense(draft,live,'siac-clinic-default');
+ assert.equal(described.matches,false);
+ assert.match(described.description,/Difiere/);
+ assert.equal(describeLiveLicense({...draft,tier:'full'},live,'siac-clinic-default').matches,true);
+ assert.throws(()=>describeLiveLicense(draft,{...live,ownerKey:'other'},'siac-clinic-default'));
+ assert.throws(()=>describeLiveLicense(draft,{...live,source:'firebase_draft'},'siac-clinic-default'));
 });

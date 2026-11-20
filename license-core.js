@@ -68,3 +68,35 @@ export function reviewLicenseChange(previous,input,clinicName=''){
   ].join('\n')
  };
 }
+
+/** Require explicit HTTPS origin; never let a worker URL carry credentials or paths. */
+export function validatedLicenseApiOrigin(value){
+ if(value===''||value==null)return null;
+ if(typeof value!=='string'||value.length>250)throw Error('Dirección del servicio de licencias no válida.');
+ let url;
+ try{url=new URL(value)}catch{throw Error('Dirección del servicio de licencias no válida.')}
+ if(url.protocol!=='https:'||url.username||url.password||url.search||url.hash||
+  !['','/'].includes(url.pathname)||url.port||url.hostname==='localhost'||!url.hostname.includes('.'))
+  throw Error('El servicio de licencias debe utilizar un origen HTTPS seguro.');
+ return url.origin;
+}
+export function describeLiveLicense(draft,serverResponse,owner){
+ if(serverResponse?.source!=='siac_live'||serverResponse.readOnly!==true||
+  serverResponse.ownerKey!==owner||
+  !['off','basic','full'].includes(serverResponse.license?.laboratory)||
+  !['off','basic','full'].includes(serverResponse.license?.contractedLaboratory))
+  throw Error('La respuesta no confirma una licencia válida para esta clínica.');
+ const live=serverResponse.license;
+ const expired=live.expired===true;
+ const effective=expired?'Desactivado por vencimiento':labelTier(live.laboratory);
+ const matches=Boolean(draft)&&draft.tier===live.contractedLaboratory&&
+  (draft.expiresOn??null)===(live.expiresOn??null);
+ return {
+  matches,
+  description:'Licencia verificada en SIAC: '+effective+
+   ' · Plan contratado: '+labelTier(live.contractedLaboratory)+
+   ' · Vencimiento: '+(live.expiresOn||'Sin fecha')+
+   ' · '+(matches?'Coincide con la propuesta guardada.':'Difiere de la propuesta o no hay propuesta guardada.')+
+   ' · Consulta: '+serverResponse.verifiedAt
+ };
+}

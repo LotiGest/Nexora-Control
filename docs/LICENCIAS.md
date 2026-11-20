@@ -34,3 +34,8 @@ La lógica independiente se puede verificar con `node --test tests/licenses.test
 El formulario guarda borradores únicamente tras pulsar **Guardar propuesta**, revisar el resumen de cliente/plan/vencimiento en un diálogo y marcar la casilla de autorización. Para cambiar a **Full** o **Desactivado**, alterar planes/vencimientos anteriores, o modificar un plan ya confirmado, también se debe escribir **CONFIRMAR**. El cliente nuevo también requiere una confirmación separada.
 
 La declaración de aplicación en D1 tiene un segundo diálogo más estricto, con texto **CONFIRMAR** y resumen de la referencia. Una cancelación o Escape no ejecuta escrituras. Los cambios a Firestore utilizan una **transacción** que comprueba si otro administrador modificó la licencia desde la última revisión y, si ha cambiado, cancela la operación en vez de sobrescribirla. Esto no sustituye la seguridad del servidor ni las reglas de Firestore. Guardar propuestas sigue sin modificar SIAC automáticamente.
+
+
+## Consulta de estado real (preparada, todavía desactivada)
+
+El panel incorpora «Consultar licencia real» y una distinción visible entre la propuesta comercial en Firestore y el estado firmado que devuelva SIAC. Actualmente permanece inactivo porque el origen público del Worker aún no está publicado: `license-api-config.js` contiene una URL vacía intencionalmente. No se almacena token alguno en GitHub; cuando haya canal seguro, el frontend enviará temporalmente el token Firebase del administrador al origen HTTPS autorizado para hacer una consulta GET, sin escrituras. El servicio verifica que el identificador de instalación coincida con el configurado en el servidor.
