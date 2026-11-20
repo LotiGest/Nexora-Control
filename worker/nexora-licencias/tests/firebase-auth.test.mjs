@@ -5,8 +5,9 @@ import {verifyFirebaseAdmin,AuthFailure} from '../src/auth.js';
 const {privateKey,publicKey}=generateKeyPairSync('rsa',{modulusLength:2048});
 const kid='test-firebase-key';
 const jwk={...publicKey.export({format:'jwk'}),kid,kty:'RSA',alg:'RS256',use:'sig'};
-const fakeFetch=async url=>{
+const fakeFetch=async (url,options)=>{
  assert.match(url,/googleapis.com\/service_accounts/);
+ assert.equal(options.redirect,'manual');
  return new Response(JSON.stringify({keys:[jwk]}),{status:200,headers:{'cache-control':'public, max-age=300'}});
 };
 const base64=data=>Buffer.from(typeof data==='string'?data:JSON.stringify(data)).toString('base64url');
