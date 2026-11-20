@@ -49,6 +49,9 @@ export async function getSiacLicenseStatus(env={},fetchImpl=fetch,now=Date.now()
  if(data?.owner!==settings.owner||data?.readOnly!==true||!TIERS.has(tier)||!TIERS.has(contracted)||
   typeof data?.license?.expired!=='boolean'||typeof data.readAt!=='string')
   throw new SiacStatusError(502,'SIAC devolvió una licencia que no corresponde a esta instalación.');
- return {ok:true,ownerKey:settings.owner,license:data.license,verifiedAt:data.readAt,
+ const license={laboratory:tier,contractedLaboratory:contracted,
+  expiresOn:data.license.expiresOn??null,expired:data.license.expired,
+  source:data.license.source==='nexora'?'nexora':'legacy'};
+ return {ok:true,ownerKey:settings.owner,license,verifiedAt:data.readAt,
   source:'siac_live',readOnly:true,activationEnabled:false};
 }
