@@ -1,0 +1,31 @@
+name: Nexora license safety checks
+on:
+  push:
+    paths:
+      - "worker/nexora-licencias/**"
+      - "license-core.js"
+      - "licenses.js"
+      - "tests/licenses.test.mjs"
+      - ".github/workflows/nexora-license-checks.yml"
+  pull_request:
+    paths:
+      - "worker/nexora-licencias/**"
+      - "license-core.js"
+      - "licenses.js"
+      - "tests/licenses.test.mjs"
+      - ".github/workflows/nexora-license-checks.yml"
+permissions:
+  contents: read
+jobs:
+  safe-license-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: node --check worker/nexora-licencias/src/index.js
+      - run: node --check worker/nexora-licencias/src/auth.js
+      - run: node --check licenses.js
+      - run: node --test tests/licenses.test.mjs worker/nexora-licencias/tests/*.test.mjs
