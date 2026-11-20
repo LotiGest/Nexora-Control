@@ -65,3 +65,15 @@ test('Nexora Worker cannot query a clinic other than the one configured on serve
  assert.equal(yes.status,200);
  assert.equal(called,1);
 });
+
+test('license status never forwards unsolicited SIAC fields to the commercial browser',async()=>{
+ const response={...validData,patientDetails:'secret',
+  license:{...validData.license,patientRecord:'PRIVATE',temporarySecret:'DO_NOT_FORWARD'}};
+ const status=await getSiacLicenseStatus(env,async()=>new Response(JSON.stringify(response),
+  {status:200,headers:{'content-type':'application/json'}}),clock);
+ assert.equal(status.patientDetails,undefined);
+ assert.equal(status.license.patientRecord,undefined);
+ assert.equal(status.license.temporarySecret,undefined);
+ assert.deepEqual(Object.keys(status.license).sort(),
+  ['contractedLaboratory','expired','expiresOn','laboratory','source'].sort());
+});
