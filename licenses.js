@@ -1,5 +1,5 @@
 import {collection,doc,getDoc,query,orderBy,limit,onSnapshot,serverTimestamp,writeBatch} from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js';
-import {normalizeClient,normalizeLicense,labelTier,licenseReviewStatus,generateSiacLicenseSql} from './license-core.mjs';
+import {normalizeClient,normalizeLicense,labelTier,licenseReviewStatus,generateSiacLicenseSql} from './license-core.js';
 
 /** Only call start() after Firebase Auth verifies an approved Nexora administrator. */
 export function mountLicenses({auth,db}){

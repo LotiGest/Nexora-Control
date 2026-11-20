@@ -1,6 +1,6 @@
 # Nexora Control — Clientes y licencias de SIAC
 
-Estado del código: sección integrada en `index.html`, estilos `licenses.css`, controlador `licenses.js` y validador `license-core.mjs`. Interfaz protegida por el login Google existente; registros sincronizados en Firestore **solo cuando sus reglas estén correctamente publicadas**.
+Estado del código: sección integrada en `index.html`, estilos `licenses.css`, controlador `licenses.js` y validador `license-core.js`. Interfaz protegida por el login Google existente; registros sincronizados en Firestore **solo cuando sus reglas estén correctamente publicadas**.
 
 ## Qué permite hoy
 

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {normalizeClient,normalizeLicense,generateSiacLicenseSql,licenseReviewStatus,validDate,validOwner} from '../license-core.mjs';
+import {normalizeClient,normalizeLicense,generateSiacLicenseSql,licenseReviewStatus,validDate,validOwner} from '../license-core.js';
 test('client IDs are installation scoped and canonical',()=>{
  assert.deepEqual(normalizeClient({name:'  Centro   Médico San Marcos  ',ownerKey:'SIAC-CLINIC-DEFAULT'}),{name:'Centro Médico San Marcos',ownerKey:'siac-clinic-default',product:'SIAC'});
  assert.equal(validOwner('siac-clinic-default'),true);
