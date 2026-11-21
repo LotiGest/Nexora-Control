@@ -56,3 +56,13 @@ Para no transferir una contraseña entre dos conexiones Cloudflare, se sustituy�
 - No se ha configurado `NEXORA_ADMIN_UIDS`; no se han desplegado reglas Firestore; no hay operaciones de activación y SIAC producción permanece inalterado.
 
 **Pendiente inmediato:** investigar el 503 mediante observabilidad de Cloudflare y pruebas autorizadas con respuestas de error sanitizadas, confirmar E2E firmado en QA, publicar/verificar las reglas de Firebase con el conector administrativo, y solo entonces decidir la implementación de activación real con auditoría e idempotencia. No crear ni habilitar un acceso público de administración de licencias para solucionar el error.
+
+## Comprobación adicional del 21/11/2026 (hora local)
+
+- Se reabrió la configuración real de `siac-license-qa`: binding `DB` a `siac-test-isolated` y secreto público de verificación `SIAC_NEXORA_PUBLIC_JWK`; no hay binding a la D1 de producción.
+- Se ejecutó en D1 QA `SELECT data FROM siac_clinic_module_licenses WHERE owner='siac-clinic-default'` y devolvió cero filas sin errores. La consulta del esquema confirmó las dos tablas. La ausencia de fila significa que el código QA debería utilizar el valor heredado predeterminado, **no** que exista un plan comercial activado.
+- El último GitHub Actions externo `44793287399` terminó `success`. El registro de ejecución confirmó que `GET /health` responde 200 y realiza una lectura D1 real, y que la ruta privada **sin firma** responde 401 con categoría sanitizada `unauthorized`. También confirmó que POST está bloqueado y las rutas desconocidas no exponen información.
+- **Diagnóstico acotado:** el 503 histórico de la petición firmada no se reproduce con las pruebas públicas sin firma, y la lectura D1 de QA funciona. Todavía no existe una nueva prueba de firma E2E aprobada. No atribuir el 503 a una causa específica sin la respuesta sanitizada de una petición firmada nueva.
+- El Worker de Nexora sigue sin `NEXORA_ADMIN_UIDS` y sin publicación workers.dev; la administración real permanece deshabilitada.
+
+**Siguiente prueba:** un test firmado de servidor a servidor con resultado sanitizado (HTTP y categoría de error, nunca JWT, JWK ni datos clínicos) y sin habilitar una ruta pública de administración. Si responde 200, verificar `environment:qa` y confirmar que el panel no lo confunda con producción. Firebase necesita acceso administrativo para revisar las reglas actuales antes de fusionar y publicar cambios.
