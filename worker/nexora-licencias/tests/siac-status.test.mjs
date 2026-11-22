@@ -99,3 +99,37 @@ test('redirections are never followed',async()=>{
  },clock),e=>e instanceof SiacStatusError&&e.status===502);
  assert.equal(called,1);
 });
+
+test('destination origin and key ID are cryptographically bound',async()=>{
+ const other={...env,NEXORA_SIAC_STATUS_URL:'https://siac-staging.nexorasystems.workers.dev/api/internal/nexora-license',NEXORA_SIAC_KEY_ID:'rotated-qa'};
+ const status=await getSiacLicenseStatus(other,async(_url,options)=>{
+  assert.equal(options.headers['x-nexora-key-id'],'rotated-qa');
+  const t=options.headers['x-nexora-timestamp'],nonce=options.headers['x-nexora-nonce'];
+  const parts=['siac-license-v1','GET','https://siac-staging.nexorasystems.workers.dev',
+   '/api/internal/nexora-license','rotated-qa',t,nonce];
+  const sig=Uint8Array.from(options.headers['x-nexora-signature'].match(/../g).map(h=>parseInt(h,16)));
+  assert.equal(sig.length,64);
+  assert.equal(await crypto.subtle.verify({name:'ECDSA',hash:'SHA-256'},keys.publicKey,sig,
+   new TextEncoder().encode(parts.join('\n'))),true);
+  parts[4]='wrong-key';
+  assert.equal(await crypto.subtle.verify({name:'ECDSA',hash:'SHA-256'},keys.publicKey,sig,
+   new TextEncoder().encode(parts.join('\n'))),false);
+  return okResponse(validData);
+ },clock);
+ assert.equal(status.environment,'qa');
+});
+test('simultaneous requests have unique nonces',async()=>{
+ const seen=new Set();
+ await Promise.all(Array.from({length:5},()=>getSiacLicenseStatus(env,async(_url,options)=>{
+  seen.add(options.headers['x-nexora-nonce']);
+  return okResponse(validData);
+ },clock)));
+ assert.equal(seen.size,5);
+});
+test('production response needs explicit expected-environment opt in',async()=>{
+ await assert.rejects(()=>getSiacLicenseStatus(env,async()=>okResponse({...validData,environment:'production'}),clock),
+  e=>e instanceof SiacStatusError&&e.status===502);
+ const prod=await getSiacLicenseStatus({...env,NEXORA_SIAC_EXPECTED_ENVIRONMENT:'production'},
+  async()=>okResponse({...validData,environment:'production'}),clock);
+ assert.equal(prod.source,'siac_live');
+});
