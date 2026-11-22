@@ -6,10 +6,12 @@ const keys=await crypto.subtle.generateKey({name:'ECDSA',namedCurve:'P-256'},tru
 const jwk=JSON.stringify(await crypto.subtle.exportKey('jwk',keys.privateKey));
 const env={NEXORA_SIAC_OWNER:'siac-clinic-default',
  NEXORA_SIAC_PRIVATE_JWK:jwk,
+ NEXORA_SIAC_KEY_ID:'nexora-qa',
+ NEXORA_SIAC_EXPECTED_ENVIRONMENT:'qa',
  NEXORA_SIAC_STATUS_URL:'https://siac.example/api/internal/nexora-license'};
 const validData={owner:'siac-clinic-default',license:{laboratory:'basic',
  contractedLaboratory:'basic',expired:false,expiresOn:null,source:'nexora'},
- readAt:'2026-11-20T05:00:00Z',readOnly:true,environment:'production'};
+ readOnly:true,environment:'qa'};
 const clock=Date.parse('2026-11-20T05:15:00Z');
 const okResponse=data=>new Response(JSON.stringify(data),{status:200,headers:{'content-type':'application/json'}});
 test('SIAC status signs a fresh P-256 ECDSA request and cannot write',async()=>{
@@ -21,7 +23,9 @@ test('SIAC status signs a fresh P-256 ECDSA request and cannot write',async()=>{
   assert.equal(options.redirect,'manual');
   assert.equal(options.body,undefined);
   const t=options.headers['x-nexora-timestamp'],n=options.headers['x-nexora-nonce'];
-  const msg=new TextEncoder().encode('GET\n/api/internal/nexora-license\n'+t+'\n'+n);
+  assert.equal(options.headers['x-nexora-key-id'],env.NEXORA_SIAC_KEY_ID);
+  const msg=new TextEncoder().encode(['siac-license-v1','GET','https://siac.example',
+   '/api/internal/nexora-license',env.NEXORA_SIAC_KEY_ID,t,n].join('\n'));
   const sig=Uint8Array.from(options.headers['x-nexora-signature'].match(/../g).map(x=>parseInt(x,16)));
   assert.equal(sig.length,64);
   assert.equal(await crypto.subtle.verify({name:'ECDSA',hash:'SHA-256'},keys.publicKey,sig,msg),true);
@@ -29,13 +33,16 @@ test('SIAC status signs a fresh P-256 ECDSA request and cannot write',async()=>{
  },clock);
  assert.equal(calls,1);
  assert.equal(result.license.laboratory,'basic');
- assert.equal(result.source,'siac_live');
+ assert.equal(result.source,'siac_qa');
+ assert.equal(result.verifiedAt,new Date(clock).toISOString());
  assert.equal(result.activationEnabled,false);
 });
 test('invalid signer keys, targets, owners and HTTP endpoints are rejected before fetch',async()=>{
  for(const changes of [
   {NEXORA_SIAC_OWNER:'other;DROP'},
   {NEXORA_SIAC_PRIVATE_JWK:'not-a-private-key'},
+  {NEXORA_SIAC_KEY_ID:''},
+  {NEXORA_SIAC_KEY_ID:'invalid!'},
   {NEXORA_SIAC_PRIVATE_JWK:JSON.stringify(await crypto.subtle.exportKey('jwk',keys.publicKey))},
   {NEXORA_SIAC_STATUS_URL:'http://siac.example/api/internal/nexora-license'},
   {NEXORA_SIAC_STATUS_URL:'https://localhost/api/internal/nexora-license'},
@@ -46,6 +53,7 @@ test('invalid signer keys, targets, owners and HTTP endpoints are rejected befor
 test('wrong SIAC owner, unexpected response or unauthorized status are denied',async()=>{
  for(const data of [{...validData,owner:'another-clinic'},
   {...validData,readOnly:false},{...validData,environment:'unexpected'},
+  {...validData,environment:'production'},
   {...validData,license:{...validData.license,laboratory:'platinum'}}]){
   await assert.rejects(()=>getSiacLicenseStatus(env,async()=>okResponse(data),clock),
    e=>e instanceof SiacStatusError&&e.status===502);
@@ -90,4 +98,61 @@ test('redirections are never followed',async()=>{
   called++;return new Response(null,{status:302,headers:{location:'https://evil.example'}});
  },clock),e=>e instanceof SiacStatusError&&e.status===502);
  assert.equal(called,1);
+});
+
+test('destination origin and key ID are cryptographically bound',async()=>{
+ const other={...env,NEXORA_SIAC_STATUS_URL:'https://siac-staging.nexorasystems.workers.dev/api/internal/nexora-license',NEXORA_SIAC_KEY_ID:'rotated-qa',
+  NEXORA_SIAC_ACCESS_CLIENT_ID:'qa-fixture-id',NEXORA_SIAC_ACCESS_CLIENT_SECRET:'qa-fixture-secret'};
+ const status=await getSiacLicenseStatus(other,async(_url,options)=>{
+  assert.equal(options.headers['x-nexora-key-id'],'rotated-qa');
+  assert.equal(options.headers['CF-Access-Client-Id'],'qa-fixture-id');
+  assert.equal(options.headers['CF-Access-Client-Secret'],'qa-fixture-secret');
+  assert.equal(options.redirect,'manual');
+  const t=options.headers['x-nexora-timestamp'],nonce=options.headers['x-nexora-nonce'];
+  const parts=['siac-license-v1','GET','https://siac-staging.nexorasystems.workers.dev',
+   '/api/internal/nexora-license','rotated-qa',t,nonce];
+  const sig=Uint8Array.from(options.headers['x-nexora-signature'].match(/../g).map(h=>parseInt(h,16)));
+  assert.equal(sig.length,64);
+  assert.equal(await crypto.subtle.verify({name:'ECDSA',hash:'SHA-256'},keys.publicKey,sig,
+   new TextEncoder().encode(parts.join('\n'))),true);
+  parts[4]='wrong-key';
+  assert.equal(await crypto.subtle.verify({name:'ECDSA',hash:'SHA-256'},keys.publicKey,sig,
+   new TextEncoder().encode(parts.join('\n'))),false);
+  return okResponse(validData);
+ },clock);
+ assert.equal(status.environment,'qa');
+});
+test('simultaneous requests have unique nonces',async()=>{
+ const seen=new Set();
+ await Promise.all(Array.from({length:5},()=>getSiacLicenseStatus(env,async(_url,options)=>{
+  seen.add(options.headers['x-nexora-nonce']);
+  return okResponse(validData);
+ },clock)));
+ assert.equal(seen.size,5);
+});
+test('production response needs explicit expected-environment opt in',async()=>{
+ await assert.rejects(()=>getSiacLicenseStatus(env,async()=>okResponse({...validData,environment:'production'}),clock),
+  e=>e instanceof SiacStatusError&&e.status===502);
+ const prod=await getSiacLicenseStatus({...env,NEXORA_SIAC_EXPECTED_ENVIRONMENT:'production'},
+  async()=>okResponse({...validData,environment:'production'}),clock);
+ assert.equal(prod.source,'siac_live');
+});
+
+test('protected Staging requires both service headers and a QA expectation',async()=>{
+ const stage={...env,NEXORA_SIAC_STATUS_URL:'https://siac-staging.nexorasystems.workers.dev/api/internal/nexora-license'};
+ const deny=e=>e instanceof SiacStatusError&&e.category==='access_not_configured';
+ const unexpectedFetch=()=>assert.fail('Incomplete credentials must stop before sending anything.');
+ await assert.rejects(()=>getSiacLicenseStatus(stage,unexpectedFetch,clock),deny);
+ await assert.rejects(()=>getSiacLicenseStatus({...stage,NEXORA_SIAC_ACCESS_CLIENT_ID:'fixture'},unexpectedFetch,clock),deny);
+ const authorized={...stage,NEXORA_SIAC_ACCESS_CLIENT_ID:'fixture',NEXORA_SIAC_ACCESS_CLIENT_SECRET:'second-fixture'};
+ await assert.rejects(()=>getSiacLicenseStatus({...authorized,NEXORA_SIAC_EXPECTED_ENVIRONMENT:'production'},unexpectedFetch,clock),deny);
+ await assert.rejects(()=>getSiacLicenseStatus(authorized,async()=>new Response('response body kept private',{status:403}),clock),
+  e=>e instanceof SiacStatusError&&e.category==='upstream_http_403'&&!e.message.includes('response body'));
+});
+
+test('license dates and effective levels must agree with SIAC contract',async()=>{
+ for(const changes of [{expiresOn:'2026-02-31'},{expired:true},{source:'other'},{contractedLaboratory:'full'}]){
+  await assert.rejects(()=>getSiacLicenseStatus(env,async()=>okResponse({...validData,license:{...validData.license,...changes}}),clock),
+   e=>e instanceof SiacStatusError&&e.status===502);
+ }
 });

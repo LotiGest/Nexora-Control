@@ -69,5 +69,11 @@ test('QA license status must never be presented as production verified',()=>{
  const ui=describeLiveLicense({ownerKey:'siac-clinic-default',tier:'full'},qa,'siac-clinic-default');
  assert.equal(ui.matches,false);
  assert.match(ui.description,/NO verifica/);
+ assert.match(ui.description,/Plan contratado en QA/);
+ assert.match(ui.description,/Consulta: 2026-11-20T05:00:00Z/);
+ const expired=describeLiveLicense(null,{...qa,license:{...qa.license,laboratory:'off',expiresOn:'2026-10-01',expired:true}},'siac-clinic-default');
+ assert.match(expired.description,/2026-10-01/);
+ assert.match(expired.description,/Vencida/);
+ assert.equal(expired.matches,false);
  assert.throws(()=>describeLiveLicense(null,{...qa,source:'siac_live'},'siac-clinic-default'));
 });

@@ -83,7 +83,11 @@ export function validatedLicenseApiOrigin(value){
 export function describeLiveLicense(draft,serverResponse,owner){
  if(serverResponse?.source==='siac_qa'&&serverResponse.environment==='qa'&&serverResponse.readOnly===true&&
   serverResponse.ownerKey===owner&&['off','basic','full'].includes(serverResponse.license?.laboratory))
-  return {matches:false,description:'Resultado de QA: '+labelTier(serverResponse.license.laboratory)+
+  return {matches:false,description:'Resultado de QA · Laboratorio: '+labelTier(serverResponse.license.laboratory)+
+   ' · Plan contratado en QA: '+labelTier(serverResponse.license.contractedLaboratory)+
+   ' · Vencimiento: '+(serverResponse.license.expiresOn||'Sin fecha')+
+   ' · Estado: '+(serverResponse.license.expired?'Vencida':serverResponse.license.laboratory==='off'?'Deshabilitada':'Vigente en QA')+
+   (serverResponse.verifiedAt?' · Consulta: '+serverResponse.verifiedAt:'')+
    '. Es una prueba aislada y NO verifica una licencia activa en SIAC de producción.'};
  if(serverResponse?.source!=='siac_live'||serverResponse.environment!=='production'||serverResponse.readOnly!==true||
   serverResponse.ownerKey!==owner||
