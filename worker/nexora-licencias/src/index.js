@@ -3,7 +3,7 @@ import {readJsonLimited,previewProposal,ProposalError} from './proposal.js';
 import {getSiacLicenseStatus,SiacStatusError} from './siac-status.js';
 /**
  * Nexora Licencias: authenticated, read-only proposal validation.
- * NO SIAC credentials / D1 bindings. Mutations fail closed.
+ * Outbound credentials are Worker secrets. This Worker has no SIAC D1 binding.
  */
 const ORIGIN='https://lotigest.github.io';
 const HEADERS={
@@ -60,7 +60,7 @@ export function createLicenseWorker(verify=verifyFirebaseAdmin,fetchSiac=getSiac
     message:'La instalación solicitada no está vinculada a este servidor.'},origin);
    try{return reply(200,await fetchSiac(env),origin)}
    catch(err){
-    if(err instanceof SiacStatusError)return reply(err.status,{error:'siac_unavailable',message:err.message},origin);
+    if(err instanceof SiacStatusError)return reply(err.status,{error:'siac_unavailable',category:err.category,message:err.message},origin);
     return reply(503,{error:'siac_unavailable',message:'No se pudo obtener una licencia verificada.'},origin);
    }
   }

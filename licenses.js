@@ -10,6 +10,7 @@ export function mountLicenses({auth,db}){
  const eventsList=$('license-events-list'),liveButton=$('license-live-check'),liveStatus=$('license-live-status');
  if(!clientForm||!draftForm||!clientList||!details||!eventsList||!liveButton||!liveStatus)throw Error('No está disponible el panel de licencias.');
  let clients=[],licenses=[],events=[],selected='',subscriptions=[],active=false,busy=false,editorOwner='',lastLicenseSignature='',draftDirty=false,generation=0;
+ let statusRequest=null;
  let apiOrigin=null;try{apiOrigin=validatedLicenseApiOrigin(NEXORA_LICENSE_API_BASE_URL)}catch{apiOrigin=null}
  liveButton.disabled=!apiOrigin;
  const msg=(text,error=false)=>{const el=$('licenses-status');el.textContent=text;el.dataset.error=error?'true':'false'};
@@ -73,11 +74,11 @@ export function mountLicenses({auth,db}){
   const customer=label(),license=current();
   $('license-selection-placeholder').hidden=!!customer;
   details.hidden=!customer;
-  if(!customer){editorOwner='';lastLicenseSignature='';draftDirty=false;return}
+  if(!customer){statusRequest?.abort();statusRequest=null;liveButton.disabled=true;editorOwner='';lastLicenseSignature='';draftDirty=false;return}
   const changedOwner=editorOwner!==selected;
   const signature=JSON.stringify([license?.tier,license?.expiresOn,license?.contractRef,license?.status,license?.evidenceRef]);
   const changedLicense=signature!==lastLicenseSignature;
-  if(changedOwner){editorOwner=selected;draftDirty=false;liveStatus.textContent=apiOrigin?'Seleccioná «Consultar licencia real» para verificar la instalación.':'Conexión de consulta pendiente de configurar. Ningún borrador se aplica automáticamente.';liveButton.disabled=!apiOrigin;}
+  if(changedOwner){statusRequest?.abort();statusRequest=null;liveStatus.dataset.matches='unknown';editorOwner=selected;draftDirty=false;liveStatus.textContent=apiOrigin?'Seleccioná «Consultar licencia real» para verificar la instalación.':'Conexión de consulta pendiente de configurar. Ningún borrador se aplica automáticamente.';liveButton.disabled=!apiOrigin;}
   if(changedLicense)lastLicenseSignature=signature;
   $('license-client-name').textContent=customer.name;
   $('license-client-owner').textContent=customer.ownerKey;
@@ -225,26 +226,29 @@ export function mountLicenses({auth,db}){
   if(!active||!apiOrigin||!selected||busy||liveButton.disabled)return;
   const user=auth.currentUser,ownerAtStart=selected,epoch=generation;
   if(!user){liveStatus.textContent='Iniciá sesión con Google para verificar licencias.';return}
-  liveButton.disabled=true;liveStatus.textContent='Consultando estado real de SIAC, sin modificar datos…';
+  const controller=new AbortController();statusRequest=controller;
+  const isCurrent=()=>active&&statusRequest===controller&&epoch===generation&&selected===ownerAtStart&&auth.currentUser?.uid===user.uid;
+  liveButton.disabled=true;liveStatus.dataset.matches='unknown';liveStatus.textContent='Consultando estado real de SIAC, sin modificar datos…';
   try{
    const token=await user.getIdToken();
-   if(!active||epoch!==generation||selected!==ownerAtStart||auth.currentUser?.uid!==user.uid)return;
+   if(!isCurrent())return;
    const response=await fetch(apiOrigin+'/api/licenses/status?ownerKey='+encodeURIComponent(ownerAtStart),{
     method:'GET',headers:{authorization:'Bearer '+token,accept:'application/json'},
-    cache:'no-store',redirect:'error',credentials:'omit'
+    cache:'no-store',redirect:'error',credentials:'omit',signal:AbortSignal.any([controller.signal,AbortSignal.timeout(8000)])
    });
    if(!response.ok)throw Error('El servidor no confirmó la consulta (HTTP '+response.status+'). Revisá la autorización y la conexión con SIAC.');
    const result=await response.json();
-   if(!active||epoch!==generation||selected!==ownerAtStart||auth.currentUser?.uid!==user.uid)return;
+   if(!isCurrent())return;
    const status=describeLiveLicense(current(),result,ownerAtStart);
    liveStatus.textContent=status.description;
    liveStatus.dataset.matches=status.matches?'true':'false';
   }catch(e){
-   if(active&&epoch===generation&&selected===ownerAtStart){liveStatus.textContent='Estado real no verificado: '+(e.message||'Conexión no disponible.');liveStatus.dataset.matches='unknown';}
-  }finally{liveButton.disabled=!apiOrigin}
+   if(isCurrent()){liveStatus.textContent='Estado real no verificado: '+(e.message||'Conexión no disponible.');liveStatus.dataset.matches='unknown';}
+  }finally{if(statusRequest===controller){statusRequest=null;liveButton.disabled=!active||!apiOrigin}}
  });
  $('license-filter').addEventListener('input',renderClients);
  function stop(){
+  statusRequest?.abort();statusRequest=null;liveStatus.dataset.matches='unknown';
   active=false;liveButton.disabled=true;liveStatus.textContent='Iniciá sesión para consultar el estado real.';if(dialog.open)dialog.close();for(const unsubscribe of subscriptions)unsubscribe();subscriptions=[];
   generation++;clients=[];licenses=[];events=[];selected='';editorOwner='';lastLicenseSignature='';draftDirty=false;
   renderClients();renderSelection();renderEvents();

@@ -41,7 +41,7 @@ Nueva ruta `POST /api/licenses/preview`, disponible solamente cuando el Worker t
 
 ## Verificación del estado real SIAC (sin escrituras)
 
-La ruta protegida GET /api/licenses/status?ownerKey=... verifica el token Firebase del administrador, comprueba que la clínica solicitada coincide exactamente con NEXORA_SIAC_OWNER (configurado en el servidor) y llama a la ruta HMAC firmada GET /api/internal/nexora-license del SIAC. Esta ruta SOLO consulta y nunca activa, desactiva ni elimina licencias.
+La ruta protegida GET /api/licenses/status?ownerKey=... verifica el token Firebase del administrador, comprueba que la clínica solicitada coincide exactamente con NEXORA_SIAC_OWNER (configurado en el servidor) y llama a la ruta firmada GET /api/internal/nexora-license del SIAC. Esta ruta SOLO consulta y nunca activa, desactiva ni elimina licencias.
 
 Requiere variables de entorno secretas: NEXORA_SIAC_OWNER, NEXORA_SIAC_STATUS_URL (HTTPS con ruta exacta), NEXORA_SIAC_SHARED_KEY (Base64URL 32 bytes), además de NEXORA_ADMIN_UIDS. No se han configurado en Cloudflare, por lo que esta API permanecerá inoperativa hasta probar los dos servicios con datos ficticios. El endpoint SIAC está actualmente en una rama de auditoría; todavía NO está publicado.
 
@@ -96,4 +96,14 @@ La migración `0027_vendor_license_nonces.sql` ya fue aplicada y comprobada en
 la D1 `siac-pr41-qa`; no volver a aplicarla sin revisar el historial. Ninguno de
 estos pasos autoriza producción o cambios de licencias reales.
 
-Prueba local dirigida: `node --test worker/nexora-licencias/tests/siac-status.test.mjs`.
+### Cloudflare Access en Staging
+
+El destino `siac-staging.nexorasystems.workers.dev` exige `qa` y ambos secretos del Worker Nexora: `NEXORA_SIAC_ACCESS_CLIENT_ID` y `NEXORA_SIAC_ACCESS_CLIENT_SECRET`. Corresponden a un token de servicio de QA admitido por una política **Service Auth** del destino autorizado. El Worker usa los encabezados oficiales `CF-Access-Client-Id` y `CF-Access-Client-Secret`, además de la firma ECDSA, y rechaza cualquier redirección. El cliente Firebase y GitHub Pages no reciben esos encabezados. Mantener el token limitado a la ruta de consulta, con vigencia acotada y revocación independiente de la clave ECDSA.
+
+Para la comprobación local completa: `node --test tests/licenses.test.mjs worker/nexora-licencias/tests/*.test.mjs`. La suite HTTP externa `tests/siac-live-qa.test.mjs` comprueba el Worker histórico `siac-license-qa` sin autenticar. La aceptación del canal actual requiere una prueba firmada con destino al Worker Staging protegido y una identidad Firebase de QA permitida por UID del servidor.
+
+### Estado de esta ronda
+
+- El contrato se comprobó con el cliente Nexora y el Worker SIAC compilado en Miniflare. El recorrido aislado devolvió HTTP 200 con `siac_qa`. Reintentos con la misma firma, claves incorrectas o retiradas y solicitudes vencidas devolvieron HTTP 401. La fila de licencia se conservó.
+- En Cloudflare, `siac-staging` continúa en `05135b5`, protegido por Access. La D1 dedicada contiene la tabla y el índice de la migración 0027. La ruta de licencias no tiene claves de firma habilitadas en ese Worker.
+- Queda pendiente conectar la cuenta de Cloudflare que aloja `nexora-licencias` y disponer de un Worker Nexora aislado, un token de servicio QA autorizado para la ruta de estado, claves ECDSA de QA y un UID administrativo de prueba comprobado en Firebase. La configuración pública del panel sigue vacía. No se abrió acceso a los Workers ni se modificaron Firebase, Firestore, Lotigest o producción.

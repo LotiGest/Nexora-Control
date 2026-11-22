@@ -101,9 +101,13 @@ test('redirections are never followed',async()=>{
 });
 
 test('destination origin and key ID are cryptographically bound',async()=>{
- const other={...env,NEXORA_SIAC_STATUS_URL:'https://siac-staging.nexorasystems.workers.dev/api/internal/nexora-license',NEXORA_SIAC_KEY_ID:'rotated-qa'};
+ const other={...env,NEXORA_SIAC_STATUS_URL:'https://siac-staging.nexorasystems.workers.dev/api/internal/nexora-license',NEXORA_SIAC_KEY_ID:'rotated-qa',
+  NEXORA_SIAC_ACCESS_CLIENT_ID:'qa-fixture-id',NEXORA_SIAC_ACCESS_CLIENT_SECRET:'qa-fixture-secret'};
  const status=await getSiacLicenseStatus(other,async(_url,options)=>{
   assert.equal(options.headers['x-nexora-key-id'],'rotated-qa');
+  assert.equal(options.headers['CF-Access-Client-Id'],'qa-fixture-id');
+  assert.equal(options.headers['CF-Access-Client-Secret'],'qa-fixture-secret');
+  assert.equal(options.redirect,'manual');
   const t=options.headers['x-nexora-timestamp'],nonce=options.headers['x-nexora-nonce'];
   const parts=['siac-license-v1','GET','https://siac-staging.nexorasystems.workers.dev',
    '/api/internal/nexora-license','rotated-qa',t,nonce];
@@ -132,4 +136,23 @@ test('production response needs explicit expected-environment opt in',async()=>{
  const prod=await getSiacLicenseStatus({...env,NEXORA_SIAC_EXPECTED_ENVIRONMENT:'production'},
   async()=>okResponse({...validData,environment:'production'}),clock);
  assert.equal(prod.source,'siac_live');
+});
+
+test('protected Staging requires both service headers and a QA expectation',async()=>{
+ const stage={...env,NEXORA_SIAC_STATUS_URL:'https://siac-staging.nexorasystems.workers.dev/api/internal/nexora-license'};
+ const deny=e=>e instanceof SiacStatusError&&e.category==='access_not_configured';
+ const unexpectedFetch=()=>assert.fail('Incomplete credentials must stop before sending anything.');
+ await assert.rejects(()=>getSiacLicenseStatus(stage,unexpectedFetch,clock),deny);
+ await assert.rejects(()=>getSiacLicenseStatus({...stage,NEXORA_SIAC_ACCESS_CLIENT_ID:'fixture'},unexpectedFetch,clock),deny);
+ const authorized={...stage,NEXORA_SIAC_ACCESS_CLIENT_ID:'fixture',NEXORA_SIAC_ACCESS_CLIENT_SECRET:'second-fixture'};
+ await assert.rejects(()=>getSiacLicenseStatus({...authorized,NEXORA_SIAC_EXPECTED_ENVIRONMENT:'production'},unexpectedFetch,clock),deny);
+ await assert.rejects(()=>getSiacLicenseStatus(authorized,async()=>new Response('response body kept private',{status:403}),clock),
+  e=>e instanceof SiacStatusError&&e.category==='upstream_http_403'&&!e.message.includes('response body'));
+});
+
+test('license dates and effective levels must agree with SIAC contract',async()=>{
+ for(const changes of [{expiresOn:'2026-02-31'},{expired:true},{source:'other'},{contractedLaboratory:'full'}]){
+  await assert.rejects(()=>getSiacLicenseStatus(env,async()=>okResponse({...validData,license:{...validData.license,...changes}}),clock),
+   e=>e instanceof SiacStatusError&&e.status===502);
+ }
 });
