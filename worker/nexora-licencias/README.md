@@ -47,3 +47,53 @@ Requiere variables de entorno secretas: NEXORA_SIAC_OWNER, NEXORA_SIAC_STATUS_UR
 
 
 **Ambiente verificado explícitamente (20/11/2026):** la ruta de consulta de SIAC debe devolver `environment: 'qa'|'production'`. Nexora solo etiqueta un resultado como `siac_live` si el servidor informa `production`; las respuestas QA se identifican como `siac_qa` y el panel muestra que NO se verificó una licencia comercial real. Respuestas sin ambiente identificado se rechazan con HTTP 502. La configuración de los secretos sigue pendiente de autorización.
+
+## Contrato SIAC firmado v1 — corrección del cliente (22/11/2026)
+
+El servidor SIAC actual (PR #46/#47, `app/server/nexora-license-auth.ts`) requiere
+**ECDSA P-256 / SHA-256**, clave pública autorizada y una firma vinculada al destino,
+no el payload HMAC histórico descrito arriba. Esta rama de Nexora **no despliega ningún
+Worker** ni cambia el frontend productivo.
+
+El Worker de Nexora, sin exponer claves al navegador, firma exactamente estos siete campos,
+unidos con `\n` y **sin salto final**:
+
+```text
+siac-license-v1
+GET
+https://<origen-del-SIAC-de-destino>
+/api/internal/nexora-license
+<identificador-de-clave>
+<timestamp-Unix-en-segundos>
+<nonce-UUID-v4>
+```
+
+Los encabezados son `x-nexora-key-id`, `x-nexora-timestamp`,
+`x-nexora-nonce` y `x-nexora-signature` (hexadecimal minúsculo de 64 bytes crudos).
+La clave privada solo permanece como secreto `NEXORA_SIAC_PRIVATE_JWK` del Worker Nexora.
+Su ID se establece por separado como `NEXORA_SIAC_KEY_ID` (1–48 caracteres
+ASCII alfanuméricos, guion o guion bajo).
+
+En el Worker SIAC de QA se necesitan `SIAC_NEXORA_LICENSE_ORIGIN` (origen HTTPS
+exacto), `SIAC_NEXORA_KEY_ID` (el mismo ID) y `SIAC_NEXORA_PUBLIC_JWK` (solo clave
+pública). En el Worker Nexora deben configurarse `NEXORA_SIAC_OWNER`,
+`NEXORA_SIAC_STATUS_URL`, `NEXORA_SIAC_PRIVATE_JWK`, `NEXORA_SIAC_KEY_ID`
+y `NEXORA_SIAC_EXPECTED_ENVIRONMENT=qa`. El valor por defecto del entorno
+esperado es `qa`; una respuesta `production` se rechaza en ese modo.
+No configurar credenciales con texto en archivos públicos ni con GitHub Actions.
+
+SIAC devuelve `owner`, `license`, `environment` y `readOnly`. **No devuelve
+`readAt`**: Nexora asigna a `verifiedAt` el instante local de observación, no lo
+hace pasar por una fecha firmada por SIAC. Las respuestas QA se muestran
+como `siac_qa` y nunca confirman una activación comercial.
+
+**Requisitos antes de una prueba real:** asegurar que la URL destino permita
+peticiones servidor-a-servidor firmadas sin eludir Cloudflare Access, disponer
+de claves y key ID de QA válidos, verificar las cuentas Firebase de
+administradores, y comprobar el resultado remoto con categorías de error
+sanitizadas. El Worker de Nexora sigue sin rutas de escritura de licencias.
+La migración `0027_vendor_license_nonces.sql` ya fue aplicada y comprobada en
+la D1 `siac-pr41-qa`; no volver a aplicarla sin revisar el historial. Ninguno de
+estos pasos autoriza producción o cambios de licencias reales.
+
+Prueba local dirigida: `node --test worker/nexora-licencias/tests/siac-status.test.mjs`.
