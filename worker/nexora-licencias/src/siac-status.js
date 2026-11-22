@@ -30,18 +30,27 @@ export function statusConfig(env={}){
   destination.pathname!=='/api/internal/nexora-license'||destination.search||destination.hash||
   destination.hostname==='localhost'||!destination.hostname.includes('.'))
   throw new SiacStatusError(503,'Destino SIAC no válido.');
- return {owner,endpoint:destination.href,privateJwk:readPrivateJwk(env.NEXORA_SIAC_PRIVATE_JWK)};
+ const kid=env.NEXORA_SIAC_KEY_ID;
+ if(typeof kid!=='string'||!/^[a-zA-Z0-9_-]{1,48}$/.test(kid))
+  throw new SiacStatusError(503,'Identificador de clave Nexora no configurado.');
+ // Never label an unverified QA response as a production license.
+ const expectedEnvironment=env.NEXORA_SIAC_EXPECTED_ENVIRONMENT??'qa';
+ if(!['qa','production'].includes(expectedEnvironment))
+  throw new SiacStatusError(503,'Entorno SIAC de destino no válido.');
+ return {owner,endpoint:destination.href,origin:destination.origin,kid,expectedEnvironment,
+  privateJwk:readPrivateJwk(env.NEXORA_SIAC_PRIVATE_JWK)};
 }
 export async function getSiacLicenseStatus(env={},fetchImpl=fetch,now=Date.now()){
  const settings=statusConfig(env);
  const timestamp=Math.floor(now/1000),nonce=crypto.randomUUID();
- const signed='GET\n/api/internal/nexora-license\n'+timestamp+'\n'+nonce;
+ const signed=['siac-license-v1','GET',settings.origin,'/api/internal/nexora-license',
+  settings.kid,String(timestamp),nonce].join('\n');
  const key=await crypto.subtle.importKey('jwk',settings.privateJwk,{name:'ECDSA',namedCurve:'P-256'},false,['sign']);
  const signature=hex(await crypto.subtle.sign({name:'ECDSA',hash:'SHA-256'},key,new TextEncoder().encode(signed)));
  let response;
  try{
   response=await fetchImpl(settings.endpoint,{method:'GET',headers:{
-   'x-nexora-timestamp':String(timestamp),'x-nexora-nonce':nonce,
+   'x-nexora-key-id':settings.kid,'x-nexora-timestamp':String(timestamp),'x-nexora-nonce':nonce,
    'x-nexora-signature':signature,'accept':'application/json'
   },redirect:'manual',cache:'no-store',signal:AbortSignal.timeout(5000)});
  }catch{throw new SiacStatusError(502,'No fue posible consultar SIAC de manera segura.')}
@@ -53,13 +62,14 @@ export async function getSiacLicenseStatus(env={},fetchImpl=fetch,now=Date.now()
  try{data=await response.json()}catch{throw new SiacStatusError(502,'Respuesta de SIAC no válida.')}
  const tier=data?.license?.laboratory,contracted=data?.license?.contractedLaboratory;
  if(data?.owner!==settings.owner||data?.readOnly!==true||!TIERS.has(tier)||!TIERS.has(contracted)||
-  typeof data?.license?.expired!=='boolean'||typeof data.readAt!=='string'||
-  !['qa','production'].includes(data.environment))
+  typeof data?.license?.expired!=='boolean'||
+  !['qa','production'].includes(data.environment)||data.environment!==settings.expectedEnvironment)
   throw new SiacStatusError(502,'SIAC devolvió una licencia que no corresponde a esta instalación.');
  const license={laboratory:tier,contractedLaboratory:contracted,
   expiresOn:data.license.expiresOn??null,expired:data.license.expired,
   source:data.license.source==='nexora'?'nexora':'legacy'};
- return {ok:true,ownerKey:settings.owner,license,verifiedAt:data.readAt,
+ // The SIAC v1 endpoint does not return readAt: this is the Nexora observation time.
+ return {ok:true,ownerKey:settings.owner,license,verifiedAt:new Date(now).toISOString(),
   source:data.environment==='production'?'siac_live':'siac_qa',environment:data.environment,
   readOnly:true,activationEnabled:false};
 }
