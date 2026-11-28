@@ -1,11 +1,15 @@
 {
-  "name": "nexora-finanzas-qa",
+  "name": "nexora-finanzas-qa-20261128",
   "main": "src/index.js",
   "compatibility_date": "2026-11-01",
-  "d1_databases": [{
-    "binding": "NEXORA_FINANCE_DB",
-    "database_name": "nexora-finanzas-qa-isolada",
-    "database_id": "REPLACE_WITH_QA_D1_ID",
-    "migrations_dir": "migrations"
-  }]
+  "d1_databases": [
+    {
+      "binding": "NEXORA_FINANCE_DB",
+      "database_name": "nexora-finanzas-qa-20261128",
+      "database_id": "640fe8ee-d6a2-4c4c-b859-ac8f5b3d1416",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "workers_dev": false,
+  "preview_urls": false
 }
