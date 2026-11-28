@@ -58,23 +58,25 @@ function ncContract(d,id) {
  && ncAddon(lines,p,1)
  && ncAddon(lines,p,2)
  && ncAddon(lines,p,3)
- && ncAddon(lines,p,4)
- && ncAddon(lines,p,5)
- && ncAddon(lines,p,6)
- && ncAddon(lines,p,7)
  && ncMeta(d);
 }
 function ncContractTail(d) {
  let lines = d.lines;
  let p = d.product;
- return ncAddon(lines,p,8)
- && ncAddon(lines,p,9)
- && ncAddon(lines,p,10)
- && ncAddon(lines,p,11)
- && ncAddon(lines,p,12)
- && ncAddon(lines,p,13)
- && ncAddon(lines,p,14)
- && ncAddon(lines,p,15);
+ return ncAddon(lines,p,4) && ncAddon(lines,p,5) && ncAddon(lines,p,6) && ncAddon(lines,p,7);
+}
+function ncHasLongChecks(id,d) {
+ let a = /databases/$(database)/documents/nexoraCommercialContracts/$(id)/lineChecks/$(d.revisionKey + '-a');
+ let b = /databases/$(database)/documents/nexoraCommercialContracts/$(id)/lineChecks/$(d.revisionKey + '-b');
+ return d.lines.size() <= 8 || (!exists(a) && !exists(b) && getAfter(a).data == d && getAfter(b).data == d);
+}
+function ncLongCheck(d,id,proof) {
+ let p = /databases/$(database)/documents/nexoraCommercialContracts/$(id);
+ let lines = d.lines;
+ let product = d.product;
+ return lines.size() > 8 && lines.size() <= 16 && getAfter(p).data == d && (!exists(p) || get(p).data.revisionKey != d.revisionKey)
+ && ((proof == d.revisionKey + '-a' && ncAddon(lines,product,8) && ncAddon(lines,product,9) && ncAddon(lines,product,10) && ncAddon(lines,product,11))
+ || (proof == d.revisionKey + '-b' && ncAddon(lines,product,12) && ncAddon(lines,product,13) && ncAddon(lines,product,14) && ncAddon(lines,product,15)));
 }
 function ncHasRevision(col,id,d) {
  let p = /databases/$(database)/documents/$(col)/$(id)/revisions/$(d.revisionKey);
@@ -100,9 +102,9 @@ match /nexoraRateCatalog/{id} {
 match /nexoraCommercialContracts/{id} {
  allow get,list: if nexoraLicenseAdmin();
  allow create: if nexoraLicenseAdmin() && ncContract(request.resource.data,id)
-  && request.resource.data.version == 1 && ncHasRevision('nexoraCommercialContracts',id,request.resource.data);
+  && request.resource.data.version == 1 && ncHasRevision('nexoraCommercialContracts',id,request.resource.data) && ncHasLongChecks(id,request.resource.data);
  allow update: if nexoraLicenseAdmin() && ncContract(request.resource.data,id)
-  && request.resource.data.version == resource.data.version + 1 && ncHasRevision('nexoraCommercialContracts',id,request.resource.data);
+  && request.resource.data.version == resource.data.version + 1 && ncHasRevision('nexoraCommercialContracts',id,request.resource.data) && ncHasLongChecks(id,request.resource.data);
  allow delete: if false;
  match /revisions/{rev} {
   allow get,list: if nexoraLicenseAdmin();
@@ -110,6 +112,11 @@ match /nexoraCommercialContracts/{id} {
   // Split validation across the two writes to stay under Firestore's expression budget.
   allow create: if nexoraLicenseAdmin() && ncRevisionMatches('nexoraCommercialContracts',id,rev,request.resource.data)
    && ncContractTail(request.resource.data);
+  allow update,delete: if false;
+ }
+ match /lineChecks/{proof} {
+  allow get,list: if nexoraLicenseAdmin();
+  allow create: if nexoraLicenseAdmin() && ncLongCheck(request.resource.data,id,proof);
   allow update,delete: if false;
  }
 }

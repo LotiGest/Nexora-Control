@@ -113,11 +113,12 @@ test('reglas comerciales rechazan conceptos duplicados y módulos SIAC incompati
  const line={product:'SIAC',code:'base',name:'Base',kind:'plan',catalogVersion:1,initialCents:1000,feeCents:500,cadence:'monthly',cycles:0};
  const addon=code=>({...line,code,kind:'module'});
  const contract={product:'SIAC',clientKey:k,name:'QA módulos',reference:'QA',status:'agreed',version:1,revisionKey:rev(401),updatedBy:'qa-admin-a',updatedAt:serverTimestamp()};
- const save=lines=>{const b=writeBatch(db),data={...contract,lines};b.set(head,data);b.set(doc(head,'revisions',data.revisionKey),data);return b.commit();};
+ const save=(lines,checks=true)=>{const b=writeBatch(db),data={...contract,lines};b.set(head,data);b.set(doc(head,'revisions',data.revisionKey),data);if(lines.length>8&&checks){for(const suffix of ['a','b'])b.set(doc(head,'lineChecks',data.revisionKey+'-'+suffix),data);}return b.commit();};
  for(const lines of [[line,addon('base')],[line,addon('lab-basic'),addon('lab-plus')],[{...line,code:'integral'},addon('lab-plus')],[line,{...addon('lab-connect'),initialCents:0,feeCents:0}],[line,addon('lab-plus'),addon('lab-connect')]])await assertFails(save(lines));
  const full=[line,...Array.from({length:15},(_,i)=>addon('mod-'+i))];
  await assertFails(save([...full.slice(0,15),{...full[15],feeCents:-1}]));
  await assertFails(save([...full.slice(0,15),{...full[15],code:full[1].code}]));
+ await assertFails(save(full,false));
  await assertSucceeds(save(full));
  assert.equal((await getDoc(head)).data().lines.length,16);
 });

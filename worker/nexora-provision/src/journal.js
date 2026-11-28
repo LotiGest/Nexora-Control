@@ -8,7 +8,7 @@ export function provisionJournal(db){
   const res=await db.prepare("INSERT INTO provision_operations(contract_id,revision,requested_by,state) VALUES(?,?,?,'running') ON CONFLICT(contract_id) DO NOTHING").bind(contractId,revision,uid).run();
   const row=await db.prepare("SELECT contract_id AS contractId,revision,state,database_id AS databaseId,database_name AS databaseName FROM provision_operations WHERE contract_id=?").bind(contractId).first();
   if(!row)throw Error('Missing operation');
-  return {claimed:res.meta.changes===1,row};
+  return {claimed:res.meta.changes===1,row:{...row}};
  },
  async finish({contractId,revision,result}){
   if(result?.state!=='schema-ready'||!uuid.test(result.databaseId??'')||typeof result.databaseName!=='string'||result.databaseName!=='lotigest-'+contractId.slice(10).replaceAll('-','_'))throw Error('Invalid infrastructure result');
