@@ -1,0 +1,322 @@
+// Merge inside existing /databases/{database}/documents match. Requires existing nexoraLicenseAdmin().
+// Never replace existing rules or loosen authentication. Test with Firebase Emulator before release.
+function ncProduct(p) {return p in ['SIAC','SINDEX','LOTIGEST'];}
+function ncKey(k) {return k is string && k.matches('^[a-z0-9][a-z0-9-]{2,59}$');}
+function ncLabel(s,n) {return s is string && s.size() >= 1 && s.size() <= n;}
+function ncAmount(d) {
+ return d.initialCents is int && d.initialCents >= 0 && d.initialCents <= 10000000000
+ && d.feeCents is int && d.feeCents >= 0 && d.feeCents <= 10000000000
+ && d.cadence in ['monthly','quarterly','annual','once']
+ && d.cycles is int && d.cycles >= 0 && d.cycles <= 120
+ && (d.cadence != 'once' || (d.feeCents == 0 && d.cycles == 0))
+ && (d.feeCents != 0 || d.cycles == 0);
+}
+function ncMeta(d) {
+ return d.version is int && d.version >= 1 && d.revisionKey is string
+ && d.revisionKey.matches('^[a-f0-9-]{36}$') && d.updatedBy == request.auth.uid && d.updatedAt == request.time;
+}
+function ncRate(d,id) {
+ return d.keys().hasOnly(['product','code','name','kind','initialCents','feeCents','cadence','cycles','enabled','version','revisionKey','updatedBy','updatedAt'])
+ && (ncProduct(d.product) || d.product == 'DVOLADA') && ncKey(d.code) && id == d.product + '__' + d.code
+ && ncLabel(d.name,100) && d.kind in ['plan','module'] && d.enabled is bool && (ncAmount(d) || (d.product == 'DVOLADA' && d.cadence == 'delivery' && d.initialCents == 0 && d.feeCents is int && d.feeCents >= 0 && d.feeCents <= 10000000000 && d.cycles == 0)) && ncMeta(d);
+}
+function ncLine(d,p,kind) {
+ let code = d.code;
+ let name = d.name;
+ let initial = d.initialCents;
+ let fee = d.feeCents;
+ let cycles = d.cycles;
+ let cadence = d.cadence;
+ let version = d.catalogVersion;
+ return d.keys().hasOnly(['product','code','name','kind','catalogVersion','initialCents','feeCents','cadence','cycles'])
+ && d.product == p && d.kind == kind && code is string && code.matches('^[a-z0-9][a-z0-9-]{2,59}$')
+ && name is string && name.size() >= 1 && name.size() <= 100
+ && version is int && version >= 1
+ && initial is int && initial >= 0 && initial <= 10000000000
+ && fee is int && fee >= 0 && fee <= 10000000000
+ && cycles is int && cycles >= 0 && cycles <= 120 && cadence in ['monthly','quarterly','annual','once']
+ && (cadence != 'once' || (fee == 0 && cycles == 0)) && (fee != 0 || cycles == 0)
+ && (p != 'SIAC' || code != 'lab-connect' || (initial == 0 && fee == 0));
+}
+function ncAddon(lines,p,i) {return lines.size() <= i || ncLine(lines[i],p,'module');}
+function ncUniqueCompatible(lines,p) {
+ let blank = {'code':''};
+ let padded = lines.concat([blank,blank,blank,blank,blank,blank,blank,blank,blank,blank,blank,blank,blank,blank,blank,blank]);
+ let codes = [padded[0].code,padded[1].code,padded[2].code,padded[3].code,padded[4].code,padded[5].code,padded[6].code,padded[7].code,padded[8].code,padded[9].code,padded[10].code,padded[11].code,padded[12].code,padded[13].code,padded[14].code,padded[15].code].toSet();
+ return codes.size() == lines.size() + (lines.size() < 16 ? 1 : 0)
+ && (p != 'SIAC' || ((!codes.hasAny(['integral']) || !codes.hasAny(['lab-basic','lab-plus','lab-connect','imagenologia','hospitalizacion']))
+ && !(codes.hasAll(['lab-basic','lab-plus'])) && (!codes.hasAny(['lab-connect']) || codes.hasAny(['lab-plus']))));
+}
+function ncContract(d,id) {
+ let lines = d.lines;
+ let p = d.product;
+ return d.keys().hasOnly(['product','clientKey','name','reference','status','relationship','agreementNote','lines','version','revisionKey','updatedBy','updatedAt'])
+ && ncProduct(d.product) && ncKey(d.clientKey) && id == d.product + '__' + d.clientKey
+ && ncLabel(d.name,100) && ncLabel(d.reference,140) && d.status in ['draft','agreed','inactive']
+ && d.get('relationship','standard') in ['standard','founder','partner'] && d.get('agreementNote','') is string && d.get('agreementNote','').size() <= 500 && (d.get('relationship','standard') == 'standard' || d.get('agreementNote','').size() > 0)
+ && d.lines is list && d.lines.size() >= 1 && d.lines.size() <= 16 && ncUniqueCompatible(lines,p) && ncLine(lines[0],p,'plan')
+
+ && ncMeta(d) && (lines.size() <= 4 ? (ncAddon(lines,p,1) && ncAddon(lines,p,2) && ncAddon(lines,p,3)) : ncPreparedGroups(d,id));
+}
+function ncGroupMatches(d,id,group,lines) {
+ let p = /databases/$(database)/documents/nexoraCommercialContracts/$(id)/lineChecks/$(d.revisionKey + '-' + group);
+ let v = get(p).data;
+ return v.product == d.product && v.clientKey == d.clientKey && v.version == d.version && v.revisionKey == d.revisionKey
+ && v.updatedBy == request.auth.uid && v.group == group && v.lines == lines;
+}
+function ncPreparedGroups(d,id) {
+ let blank = {'code':''};
+ let x = d.lines.concat([blank,blank,blank,blank,blank,blank,blank,blank,blank,blank,blank,blank,blank,blank,blank,blank]);
+ return ncGroupMatches(d,id,'a',[x[0],x[1],x[2],x[3]]) && ncGroupMatches(d,id,'b',[x[4],x[5],x[6],x[7]])
+ && (d.lines.size() <= 8 || ncGroupMatches(d,id,'c',[x[8],x[9],x[10],x[11]]))
+ && (d.lines.size() <= 12 || ncGroupMatches(d,id,'d',[x[12],x[13],x[14],x[15]]));
+}
+function ncCheckEntry(d,p,kind) {return d == {'code':''} || ncLine(d,p,kind);}
+function ncLongCheck(d,id,proof) {
+ let lines = d.lines;
+ let p = d.product;
+ return d.keys().hasOnly(['product','clientKey','version','revisionKey','updatedBy','updatedAt','group','lines'])
+ && ncProduct(p) && ncKey(d.clientKey) && id == p + '__' + d.clientKey
+ && d.group in ['a','b','c','d'] && proof == d.revisionKey + '-' + d.group && ncMeta(d)
+ && lines is list && lines.size() == 4
+ && ncLine(lines[0],p,d.group == 'a' ? 'plan' : 'module')
+ && ncCheckEntry(lines[1],p,'module') && ncCheckEntry(lines[2],p,'module') && ncCheckEntry(lines[3],p,'module');
+}
+function ncHasRevision(col,id,d) {
+ let p = /databases/$(database)/documents/$(col)/$(id)/revisions/$(d.revisionKey);
+ return !exists(p) && getAfter(p).data == d;
+}
+function ncRevisionMatches(col,id,rev,d) {
+ let p = /databases/$(database)/documents/$(col)/$(id);
+ return rev == d.revisionKey && getAfter(p).data == d && (!exists(p) || get(p).data.revisionKey != rev);
+}
+match /nexoraRateCatalog/{id} {
+ allow get,list: if nexoraLicenseAdmin();
+ allow create: if nexoraLicenseAdmin() && ncRate(request.resource.data,id)
+  && request.resource.data.version == 1 && ncHasRevision('nexoraRateCatalog',id,request.resource.data);
+ allow update: if nexoraLicenseAdmin() && ncRate(request.resource.data,id)
+  && request.resource.data.version == resource.data.version + 1 && ncHasRevision('nexoraRateCatalog',id,request.resource.data);
+ allow delete: if false;
+ match /revisions/{rev} {
+  allow get,list: if nexoraLicenseAdmin();
+  allow create: if nexoraLicenseAdmin() && ncRate(request.resource.data,id) && ncRevisionMatches('nexoraRateCatalog',id,rev,request.resource.data);
+  allow update,delete: if false;
+ }
+}
+match /nexoraCommercialContracts/{id} {
+ allow get,list: if nexoraLicenseAdmin();
+ allow create: if nexoraLicenseAdmin() && ncContract(request.resource.data,id)
+  && request.resource.data.version == 1 && ncHasRevision('nexoraCommercialContracts',id,request.resource.data);
+ allow update: if nexoraLicenseAdmin() && ncContract(request.resource.data,id)
+  && request.resource.data.version == resource.data.version + 1 && ncHasRevision('nexoraCommercialContracts',id,request.resource.data);
+ allow delete: if false;
+ match /revisions/{rev} {
+  allow get,list: if nexoraLicenseAdmin();
+  // Head validates each prepared group, and head/revision must match atomically.
+  allow create: if nexoraLicenseAdmin() && ncRevisionMatches('nexoraCommercialContracts',id,rev,request.resource.data);
+  allow update,delete: if false;
+ }
+ match /lineChecks/{proof} {
+  allow get,list: if nexoraLicenseAdmin();
+  allow create: if nexoraLicenseAdmin() && ncLongCheck(request.resource.data,id,proof);
+  allow update,delete: if false;
+ }
+}
+
+function ncProject(d,id) {
+ return d.keys().hasOnly(['id','progress','stage','release','notes','version','revisionKey','updatedBy','updatedAt'])
+ && id in ['siac','sindex','lotigest','dvolada'] && d.id == id && d.progress is int && d.progress >= 0 && d.progress <= 100
+ && d.stage in ['development','testing','production','maintenance','paused'] && d.release is string && d.release.size() <= 60
+ && ncLabel(d.notes,500) && ncMeta(d);
+}
+match /nexoraProjectStatus/{id} {
+ allow get,list: if nexoraLicenseAdmin();
+ allow create: if nexoraLicenseAdmin() && ncProject(request.resource.data,id) && request.resource.data.version == 1 && ncHasRevision('nexoraProjectStatus',id,request.resource.data);
+ allow update: if nexoraLicenseAdmin() && ncProject(request.resource.data,id) && request.resource.data.version == resource.data.version + 1 && ncHasRevision('nexoraProjectStatus',id,request.resource.data);
+ allow delete: if false;
+ match /revisions/{rev} {
+  allow get,list: if nexoraLicenseAdmin();
+  allow create: if nexoraLicenseAdmin() && ncProject(request.resource.data,id) && ncRevisionMatches('nexoraProjectStatus',id,rev,request.resource.data);
+  allow update,delete: if false;
+ }
+}
+
+function ncCalendar(d,id) {
+ let c = getAfter(/databases/$(database)/documents/nexoraCommercialContracts/$(id)).data;
+ return d.keys().hasOnly(['contractId','product','clientKey','name','reference','contractVersion','initialDue','firstDue','lines','createdBy','createdAt'])
+ && d.contractId == id && c.status == 'agreed' && d.product == c.product && d.clientKey == c.clientKey
+ && d.name == c.name && d.reference == c.reference && d.contractVersion == c.version && d.lines == c.lines
+ && d.initialDue is string && d.initialDue.matches('^20[0-9]{2}-[0-9]{2}-[0-9]{2}$')
+ && d.firstDue is string && d.firstDue.matches('^20[0-9]{2}-[0-9]{2}-[0-9]{2}$') && d.initialDue <= d.firstDue
+ && d.createdBy == request.auth.uid && d.createdAt == request.time;
+}
+match /nexoraBillingCalendars/{id} {
+ allow get,list: if nexoraLicenseAdmin();
+ allow create: if nexoraLicenseAdmin() && ncCalendar(request.resource.data,id) && ncAfterTrial(request.resource.data,id);
+ allow update,delete: if false;
+}
+
+// Trial timestamps use UTC midnight as a civil-date encoding, not a user's local clock.
+function ncPad(n) {return (n < 10 ? '0' : '') + string(n);}
+function ncDateText(t) {return string(t.year()) + '-' + ncPad(t.month()) + '-' + ncPad(t.day());}
+function ncTrial(d,id) {
+ let c = getAfter(/databases/$(database)/documents/nexoraCommercialContracts/$(id)).data;
+ return d.keys().hasOnly(['contractId','startsOn','days','endsOn','startAt','endAt','version','revisionKey','updatedBy','updatedAt'])
+ && d.contractId == id && c.status in ['draft','agreed'] && d.days is int && d.days >= 1 && d.days <= 365
+ && d.startAt is timestamp && d.endAt is timestamp && d.startAt == timestamp.date(d.startAt.year(),d.startAt.month(),d.startAt.day())
+ && d.endAt == d.startAt + duration.value(d.days,'d') && d.startsOn == ncDateText(d.startAt) && d.endsOn == ncDateText(d.endAt)
+ && !existsAfter(/databases/$(database)/documents/nexoraBillingCalendars/$(id)) && ncMeta(d);
+}
+match /nexoraCommercialTrials/{id} {
+ allow get,list: if nexoraLicenseAdmin();
+ allow create: if nexoraLicenseAdmin() && ncTrial(request.resource.data,id) && request.resource.data.version == 1 && ncHasRevision('nexoraCommercialTrials',id,request.resource.data);
+ allow update: if nexoraLicenseAdmin() && ncTrial(request.resource.data,id) && request.resource.data.version == resource.data.version + 1 && ncHasRevision('nexoraCommercialTrials',id,request.resource.data);
+ allow delete: if false;
+ match /revisions/{rev} {
+  allow get,list: if nexoraLicenseAdmin();
+  allow create: if nexoraLicenseAdmin() && ncTrial(request.resource.data,id) && ncRevisionMatches('nexoraCommercialTrials',id,rev,request.resource.data);
+  allow update,delete: if false;
+ }
+}
+function ncAfterTrial(d,id) {
+ let p = /databases/$(database)/documents/nexoraCommercialTrials/$(id);
+ return !existsAfter(p) || d.initialDue >= getAfter(p).data.endsOn;
+}
+
+function ncOptionalString(v,n) {return v is string && v.size() <= n;}
+function ncCount(v) {return v == null || (v is int && v >= 0 && v <= 1000000);}
+function ncProfile(d,id) {
+ return d.keys().hasOnly(['product','clientKey','name','legalName','rtn','ownerName','address','ownerPhone','companyPhone','email','logoUrl','contactRole','facilityType','residentials','sellers','estimatedClients','doctors','analyzers','specialties','consultories','adminName','adminUsername','adminRole','notes','version','revisionKey','updatedBy','updatedAt'])
+ && ncProduct(d.product) && ncKey(d.clientKey) && id == d.product+'__'+d.clientKey
+ && ncLabel(d.name,100) && ncOptionalString(d.legalName,150) && (d.rtn == '' || (d.rtn is string && d.rtn.matches('^[0-9]{14}$')))
+ && ncOptionalString(d.ownerName,120) && ncOptionalString(d.address,250) && ncOptionalString(d.ownerPhone,30) && ncOptionalString(d.companyPhone,30) && ncOptionalString(d.email,150)
+ && ncOptionalString(d.logoUrl,350) && (d.logoUrl == '' || d.logoUrl.matches('^https://[^ ]+$'))
+ && ncOptionalString(d.contactRole,100) && ncOptionalString(d.facilityType,100)
+ && ncCount(d.residentials) && ncCount(d.sellers) && ncCount(d.estimatedClients) && ncCount(d.doctors) && ncCount(d.analyzers) && ncCount(d.specialties) && ncCount(d.consultories)
+ && (d.product == 'LOTIGEST' || (d.residentials == null && d.sellers == null && d.estimatedClients == null))
+ && (d.product == 'SIAC' || (d.doctors == null && d.analyzers == null))
+ && (d.product == 'SINDEX' || (d.specialties == null && d.consultories == null))
+ && ncOptionalString(d.adminName,120) && (d.adminUsername == '' || (d.adminUsername is string && d.adminUsername.matches('^[a-z0-9][a-z0-9._-]{2,49}$')))
+ && (d.product != 'LOTIGEST' || d.adminUsername == '' || d.adminUsername.matches('^[a-z0-9][a-z0-9_-]{2,39}$')) && d.adminRole == 'admin'
+ && ncOptionalString(d.notes,500) && ncMeta(d);
+}
+match /nexoraCompanyProfiles/{id} {
+ allow get,list: if nexoraLicenseAdmin();
+ allow create: if nexoraLicenseAdmin() && ncProfile(request.resource.data,id) && request.resource.data.version == 1 && ncHasRevision('nexoraCompanyProfiles',id,request.resource.data);
+ allow update: if nexoraLicenseAdmin() && ncProfile(request.resource.data,id) && request.resource.data.version == resource.data.version + 1 && ncHasRevision('nexoraCompanyProfiles',id,request.resource.data);
+ allow delete: if false;
+ match /revisions/{rev} {
+  allow get,list: if nexoraLicenseAdmin();
+  allow create: if nexoraLicenseAdmin() && ncProfile(request.resource.data,id) && ncRevisionMatches('nexoraCompanyProfiles',id,rev,request.resource.data);
+  allow update,delete: if false;
+ }
+}
+
+function ncExistingRequest(d,id) {
+ let claim = /databases/$(database)/documents/nexoraInstallationD1Claims/$(d.databaseId);
+ let profile = /databases/$(database)/documents/nexoraCompanyProfiles/$(id);
+ return d.keys().hasOnly(['contractId','product','clientKey','accountId','databaseId','url','alias','state','source','createdBy','createdAt'])
+ && d.contractId == id && d.product == 'LOTIGEST' && ncKey(d.clientKey) && id == 'LOTIGEST__'+d.clientKey && exists(profile)
+ && d.accountId is string && d.accountId.matches('^[a-f0-9]{32}$')
+ && d.databaseId is string && d.databaseId.matches('^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$')
+ && ncInstallationOrigin(d.url) && (d.alias == '' || (ncInstallationOrigin(d.alias) && d.alias != d.url))
+ && d.state == 'pending-verification' && d.source == 'existing' && d.createdBy == request.auth.uid && d.createdAt == request.time
+ && !exists(claim) && getAfter(claim).data.contractId == id && getAfter(claim).data.databaseId == d.databaseId;
+}
+function ncInstallationOrigin(s) {
+ return s is string && s.size() <= 270 && s.matches('^https://[a-z0-9]([a-z0-9.-]*[a-z0-9])?[.][a-z]{2,63}$');
+}
+match /nexoraExistingInstallationRequests/{id} {
+ allow get,list: if nexoraLicenseAdmin();
+ allow create: if nexoraLicenseAdmin() && ncExistingRequest(request.resource.data,id);
+ allow update,delete: if false;
+}
+function ncExistingClaim(d,id) {
+ let link = /databases/$(database)/documents/nexoraExistingInstallationRequests/$(d.contractId);
+ return d.keys().hasOnly(['contractId','databaseId','createdBy','createdAt'])
+ && d.databaseId == id && d.createdBy == request.auth.uid && d.createdAt == request.time
+ && !exists(link) && getAfter(link).data.databaseId == id && getAfter(link).data.contractId == d.contractId;
+}
+match /nexoraInstallationD1Claims/{id} {
+ allow get,list: if nexoraLicenseAdmin();
+ allow create: if nexoraLicenseAdmin() && ncExistingClaim(request.resource.data,id);
+ allow update,delete: if false;
+}
+
+// Renewal requests are proposals only, never an authorization to alter billing or licenses.
+function ncRenewal(d,id) {
+ let c = getAfter(/databases/$(database)/documents/nexoraCommercialContracts/$(id)).data;
+ let b = getAfter(/databases/$(database)/documents/nexoraBillingCalendars/$(id)).data;
+ return d.keys().hasOnly(['contractId','product','clientKey','contractVersion','calendarVersion','effectiveOn','effectiveAt','reason','lines','state','version','revisionKey','updatedBy','updatedAt'])
+ && d.contractId == id && c.status == 'agreed' && d.product == c.product && d.clientKey == c.clientKey
+ && d.contractVersion == c.version && d.calendarVersion == b.contractVersion && d.lines == c.lines
+ && d.effectiveAt is timestamp && d.effectiveAt == timestamp.date(d.effectiveAt.year(),d.effectiveAt.month(),d.effectiveAt.day())
+ && d.effectiveOn == ncDateText(d.effectiveAt) && d.effectiveOn > b.initialDue && d.effectiveOn > ncDateText(request.time - duration.value(6,'h'))
+ && ncLabel(d.reason,500) && d.state == 'pending-review' && ncMeta(d);
+}
+function ncWithdrawRenewal(d,old) {
+ return old.state == 'pending-review' && d.state == 'withdrawn'
+ && d.diff(old).affectedKeys().hasOnly(['state','version','revisionKey','updatedBy','updatedAt'])
+ && ncMeta(d);
+}
+match /nexoraCommercialRenewals/{id} {
+ allow get,list: if nexoraLicenseAdmin();
+ allow create: if nexoraLicenseAdmin() && ncRenewal(request.resource.data,id) && request.resource.data.version == 1
+ && ncHasRevision('nexoraCommercialRenewals',id,request.resource.data);
+ allow update: if nexoraLicenseAdmin() && request.resource.data.version == resource.data.version + 1
+ && (ncWithdrawRenewal(request.resource.data,resource.data) || (resource.data.state == 'withdrawn' && ncRenewal(request.resource.data,id)))
+ && ncHasRevision('nexoraCommercialRenewals',id,request.resource.data);
+ allow delete: if false;
+ match /revisions/{rev} {
+  allow get,list: if nexoraLicenseAdmin();
+  allow create: if nexoraLicenseAdmin() && ncRevisionMatches('nexoraCommercialRenewals',id,rev,request.resource.data);
+  allow update,delete: if false;
+ }
+}
+
+// Internal commercial entitlements. Not an operational license or access token.
+function ncEntitlementPeriod(d) {
+ return d.startsAt is timestamp && d.expiresAt is timestamp && d.graceAt is timestamp
+ && d.startsAt == timestamp.date(d.startsAt.year(),d.startsAt.month(),d.startsAt.day())
+ && d.expiresAt == timestamp.date(d.expiresAt.year(),d.expiresAt.month(),d.expiresAt.day())
+ && d.startsOn == ncDateText(d.startsAt) && d.expiresOn == ncDateText(d.expiresAt) && d.graceUntil == ncDateText(d.graceAt)
+ && d.startsOn.matches('^20[0-9]{2}-[0-9]{2}-[0-9]{2}$') && d.graceUntil.matches('^20[0-9]{2}-[0-9]{2}-[0-9]{2}$')
+ && d.expiresAt >= d.startsAt && d.graceDays is int && d.graceDays >= 0 && d.graceDays <= 30
+ && d.graceAt == d.expiresAt + duration.value(d.graceDays,'d');
+}
+function ncEntitlement(d,id) {
+ return d.keys().hasOnly(['contractId','product','clientKey','contractVersion','lines','startsOn','expiresOn','graceDays','graceUntil','startsAt','expiresAt','graceAt','state','action','reason','version','revisionKey','updatedBy','updatedAt'])
+ && ncProduct(d.product) && ncKey(d.clientKey) && id == d.product+'__'+d.clientKey && d.contractId == id
+ && d.contractVersion is int && d.contractVersion >= 1 && d.lines is list && d.lines.size() >= 1 && d.lines.size() <= 16
+ && d.state in ['issued','suspended'] && d.action in ['issue','renew','suspend','resume'] && ncLabel(d.reason,500) && ncEntitlementPeriod(d) && ncMeta(d);
+}
+function ncEntitlementAgreement(d,id) {
+ let c = getAfter(/databases/$(database)/documents/nexoraCommercialContracts/$(id)).data;
+ let b = getAfter(/databases/$(database)/documents/nexoraBillingCalendars/$(id)).data;
+ return c.status == 'agreed' && c.version == d.contractVersion && b.contractVersion == d.contractVersion && c.lines == d.lines && b.lines == d.lines && d.startsOn >= b.initialDue;
+}
+function ncEntitlementTransition(d,old,id) {
+ let changed = d.diff(old).affectedKeys();
+ let today = ncDateText(request.time - duration.value(6,'h'));
+ return (d.action == 'suspend' && old.state == 'issued' && d.state == 'suspended'
+ && changed.hasOnly(['state','action','reason','version','revisionKey','updatedBy','updatedAt']))
+ || (d.action == 'resume' && old.state == 'suspended' && d.state == 'issued' && today <= d.graceUntil && ncEntitlementAgreement(d,id)
+ && changed.hasOnly(['state','action','reason','version','revisionKey','updatedBy','updatedAt']))
+ || (d.action == 'renew' && d.state == old.state && d.expiresOn > old.expiresOn && d.expiresOn >= today && ncEntitlementAgreement(d,id)
+ && changed.hasOnly(['expiresOn','expiresAt','graceDays','graceUntil','graceAt','action','reason','version','revisionKey','updatedBy','updatedAt']));
+}
+match /nexoraCommercialLicenses/{id} {
+ allow get,list: if nexoraLicenseAdmin();
+ allow create: if nexoraLicenseAdmin() && ncEntitlement(request.resource.data,id) && request.resource.data.action == 'issue'
+ && request.resource.data.state == 'issued' && request.resource.data.version == 1
+ && request.resource.data.startsOn >= ncDateText(request.time - duration.value(6,'h')) && ncEntitlementAgreement(request.resource.data,id)
+ && ncHasRevision('nexoraCommercialLicenses',id,request.resource.data);
+ allow update: if nexoraLicenseAdmin() && ncEntitlement(request.resource.data,id) && request.resource.data.version == resource.data.version + 1
+ && ncEntitlementTransition(request.resource.data,resource.data,id) && ncHasRevision('nexoraCommercialLicenses',id,request.resource.data);
+ allow delete: if false;
+ match /revisions/{rev} {
+  allow get,list: if nexoraLicenseAdmin();
+  allow create: if nexoraLicenseAdmin() && ncRevisionMatches('nexoraCommercialLicenses',id,rev,request.resource.data);
+  allow update,delete: if false;
+ }
+}

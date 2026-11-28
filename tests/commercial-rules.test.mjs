@@ -1,0 +1,2 @@
+import {test} from 'node:test';import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';
+test('company rules fragment contains exactly one complete match and username regex',()=>{const s=readFileSync(new URL('../docs/firestore-commercial-snippet.rules',import.meta.url),'utf8');assert.equal((s.match(/match \/nexoraCompanyProfiles\/\{id\}/g)||[]).length,1);assert.ok(s.includes("d.adminUsername.matches('^[a-z0-9][a-z0-9_-]{2,39}$')"));assert.ok(s.includes("d.adminRole == 'admin'"));});
