@@ -4,6 +4,15 @@ import {DatabaseSync} from 'node:sqlite';
 import {readFileSync} from 'node:fs';
 import {createFinanceWorker} from '../src/index.js';
 import {AuthFailure} from '../../nexora-licencias/src/auth.js';
+import {normalizeCompany} from '../../../commercial-company-core.js';
+import {normalizeContract} from '../../../commercial-core.js';
+import {trialDates,defaultBillingDates} from '../../../commercial-trials-core.js';
+import {snapshotCalendar} from '../../../commercial-billing-core.js';
+import {reconcileLedger} from '../../../finance-core.js';
+import {buildReceiptPdf} from '../../../finance-receipt.js';
+import {licenseChange} from '../../../commercial-entitlement-core.js';
+import {createRenewal,renewalPreview} from '../../../commercial-renewal-core.js';
+import {evaluateAcceptance} from '../../../release-readiness.js';
 
 function qaDb(){
  const db=new DatabaseSync(':memory:');
@@ -49,5 +58,28 @@ test('rechaza cobro de obligación materializada con condiciones distintas',asyn
  const p={operationId:crypto.randomUUID(),contractId:'LOTIGEST__demo',chargeId:'base__0',amountCents:100,date:'2026-10-03',reference:'QA'};
  const r=await worker.fetch(new Request('https://qa.example.test/api/finance/payment',{method:'POST',headers:{authorization:'Bearer a','content-type':'application/json'},body:JSON.stringify(p)}),env);
  assert.equal(r.status,409);assert.equal((await r.json()).error,'charge_conflict');assert.equal(db.prepare('SELECT count(*) n FROM payments').get().n,0);assert.equal(db.prepare('SELECT paid_cents FROM charges').get().paid_cents,0);
+ }finally{db.close();}
+});
+
+test('integración local de venta ficticia, prueba, abonos, recibo, cierre y renovación; no autoriza producción',async()=>{
+ const {db,adapter}=qaDb();try{
+ const company=normalizeCompany({product:'LOTIGEST',clientKey:'qa-integration',name:'Empresa ficticia integración',ownerName:'QA',address:'QA',companyPhone:'99999999',adminName:'QA',adminUsername:'admin-qa'});
+ const line={product:company.product,code:'base',name:'Base',kind:'plan',catalogVersion:1,initialCents:100000,feeCents:50000,cadence:'monthly',cycles:0};
+ const contract={...normalizeContract({product:company.product,clientKey:company.clientKey,name:company.name,reference:'QA-001',status:'agreed',lines:[line]}),version:1};
+ const trial=trialDates('2026-09-01',30),dates=defaultBillingDates('2026-10-01',trial),calendar=snapshotCalendar(contract,dates),id=calendar.contractId;
+ const encode=v=>typeof v==='string'?{stringValue:v}:typeof v==='number'?{integerValue:String(v)}:Array.isArray(v)?{arrayValue:{values:v.map(encode)}}:{mapValue:{fields:Object.fromEntries(Object.entries(v).map(([k,x])=>[k,encode(x)]))}};
+ const local=createFinanceWorker({now:()=>new Date('2026-11-28T12:00:00Z'),verify:async()=>({uid:'qa-admin-a',project:'nexora-control-qa-test'}),fetcher:async url=>{assert.ok(url.includes('/projects/nexora-control-qa-test/'));return Response.json(encode(calendar).mapValue);}});
+ const env={NEXORA_FINANCE_DB:adapter,NEXORA_ENVIRONMENT:'qa',NEXORA_FIREBASE_PROJECT_ID:'nexora-control-qa-test',NEXORA_ADMIN_UIDS:'qa-admin-a'};
+ const call=(path,body)=>local.fetch(new Request('https://qa.example.test/api/finance/'+path,{method:body?'POST':'GET',headers:{authorization:'Bearer qa','content-type':'application/json'},body:body?JSON.stringify(body):undefined}),env);
+ const payment={operationId:crypto.randomUUID(),contractId:id,chargeId:'base__0',amountCents:60000,date:'2026-10-01',reference:'QA abono'};
+ const first=await call('payment',payment);assert.equal(first.status,201);const receipt=await first.json();assert.ok(buildReceiptPdf(receipt).length>500);assert.equal((await call('payment',payment)).status,200);
+ assert.equal((await call('payment',{...payment,operationId:crypto.randomUUID(),amountCents:40000})).status,201);
+ assert.equal((await call('expense',{operationId:crypto.randomUUID(),category:'QA',amountCents:20000,date:'2026-10-05',reference:'QA gasto'})).status,201);
+ const report=await (await call('report?from=2026-01-01&to=2026-12-31')).json(),ledger=reconcileLedger(new Map([[id,calendar]]),report.charges,'2026-01-01','2026-12-31','2026-11-28');
+ assert.equal(ledger.charges.find(c=>c.id==='base__0').balanceCents,0);assert.equal(report.revenueCents,100000);
+ const close=await call('close',{month:'2026-10',expectedRevenueCents:100000,expectedExpensesCents:20000,savingsBp:2000,partnerABp:5000});assert.equal(close.status,201);assert.equal((await close.json()).partnerACents,32000);
+ const license=licenseChange({contract,calendar,action:'issue',input:{startsOn:'2026-11-28',expiresOn:'2026-12-28',graceDays:7,reason:'QA'},today:'2026-11-28'});assert.equal(license.contractId,id);
+ const proposal=createRenewal(contract,calendar,{effectiveOn:'2026-12-29',reason:'QA renovación'},'2026-11-28');assert.equal(renewalPreview(contract,calendar,proposal,'2026-11-28').mode,'projection-only');
+ assert.equal(evaluateAcceptance({candidateSha:'a'.repeat(40),evidence:[{id:'finance',candidateSha:'a'.repeat(40),environment:'qa',scope:'simulation',result:'pass'}]}).state,'blocked');
  }finally{db.close();}
 });
