@@ -34,18 +34,19 @@ export async function fetchCommercialRecords({project,id,authorization,fetcher=f
   return Object.fromEntries(Object.entries(record.fields).map(([k,v])=>[k,decode(v)]));
  }));
 }
-export async function prepareCommercialPlan(id,records,today){
+export async function prepareCommercialPlan(id,records,today,{sync=false}={}){
  if(typeof id!=='string'||!key.test(id)||!Array.isArray(records)||records.length!==4)throw Error('Solo se admite LotiGest ficticio QA.');
  const [raw,agreement,calendar,license]=records,c=normalizeCompany(raw),contract=normalizeContract(agreement);
  if(!readiness(c).ready||c.adminUsername==='lotigest-admin'||contractId(c.product,c.clientKey)!==id||contractId(contract.product,contract.clientKey)!==id||contract.status!=='agreed'||!version(raw.version)||!version(agreement.version)||!version(license.version))throw Error('Ficha o contrato no confirmado.');
  const expected=snapshotCalendar(agreement,calendar);
  if(calendar.contractId!==id||calendar.contractVersion!==agreement.version||calendar.product!==c.product||calendar.clientKey!==c.clientKey||calendar.name!==contract.name||calendar.reference!==contract.reference||JSON.stringify(calendar.lines.map(normalizeLine))!==JSON.stringify(expected.lines)||c.name!==contract.name)throw Error('Calendario o empresa no coinciden con contrato.');
- if(license.contractId!==id||license.clientKey!==c.clientKey||license.product!==c.product||license.contractVersion!==agreement.version||commercialLicenseStatus(license,today)!=='active'||JSON.stringify(license.lines.map(normalizeLine))!==JSON.stringify(expected.lines))throw Error('Licencia comercial vigente y términos exactos requeridos.');
+ if(license.contractId!==id||license.clientKey!==c.clientKey||license.product!==c.product||license.contractVersion!==agreement.version||(!sync&&commercialLicenseStatus(license,today)!=='active')||JSON.stringify(license.lines.map(normalizeLine))!==JSON.stringify(expected.lines))throw Error('Licencia comercial vigente y términos exactos requeridos.');
  const input={product:c.product,slug:c.clientKey,name:c.name,fictitious:true,modules:expected.lines.filter(l=>l.kind==='module').map(l=>l.code)};
  const plan=installationPlan(input);
  if(input.modules.length||!['promocion','profesional','empresarial','corporativo'].includes(expected.lines[0].code))throw Error('Plan aún no admitido por el adaptador operativo QA.');
+ commercialLicenseStatus(license,today);
  const entitlement={installationId:c.clientKey,contractId:id,licenseVersion:license.version,contractVersion:agreement.version,planCode:expected.lines[0].code,state:license.state,startsOn:license.startsOn,expiresOn:license.expiresOn,graceUntil:license.graceUntil};
- const revision=await digest(JSON.stringify({company:c,companyVersion:raw.version,contract,contractVersion:agreement.version,calendar:expected,licenseVersion:license.version,startsOn:license.startsOn,expiresOn:license.expiresOn,graceUntil:license.graceUntil}));
+ const revision=await digest(JSON.stringify({company:c,companyVersion:raw.version,contract,contractVersion:agreement.version,calendar:expected,licenseVersion:license.version,state:license.state,startsOn:license.startsOn,expiresOn:license.expiresOn,graceUntil:license.graceUntil}));
  return {input,plan,revision,entitlement,licenseVersion:license.version,contractVersion:agreement.version};
 }
 // Infrastructure adapter is a trusted server dependency, never constructed from request data.
@@ -53,15 +54,17 @@ export async function prepareCommercialPlan(id,records,today){
 export function createProvisionWorker({verify=verifyFirebaseAdmin,fetcher=fetch,now=()=>new Date(),infrastructure=null,journal=null,prepare=prepareQaD1}={}){
  return {async fetch(request,env={}){
   const path=new URL(request.url).pathname;
-  if(request.method!=='POST'||!['/api/provision/preview','/api/provision/prepare'].includes(path))return json(404,{error:'not_found'});
+  if(request.method!=='POST'||!['/api/provision/preview','/api/provision/prepare','/api/provision/sync-preview','/api/provision/sync'].includes(path))return json(404,{error:'not_found'});
   if(request.headers.get('origin')!==new URL(request.url).origin)return json(403,{error:'forbidden_origin'});
   let project,admin;try{project=firebaseProject(env,true);admin=await verify(request.headers.get('authorization'),env);if(admin.project!==project)throw new AuthFailure(403,'Proyecto incorrecto.');}catch(e){return json(e instanceof AuthFailure?e.status:503,{error:'authorization_failed'});}
   let raw;try{raw=await readJsonLimited(request,2048);if(!raw||typeof raw!=='object'||Array.isArray(raw)||typeof raw.contractId!=='string'||!key.test(raw.contractId)||Object.keys(raw).some(k=>!['contractId','revision'].includes(k)))throw Error();}catch{return json(400,{error:'invalid_request'});}
   const today=new Intl.DateTimeFormat('sv-SE',{timeZone:'America/Tegucigalpa',year:'numeric',month:'2-digit',day:'2-digit'}).format(now());
-  let data;try{data=await prepareCommercialPlan(raw.contractId,await fetchCommercialRecords({project,id:raw.contractId,authorization:request.headers.get('authorization'),fetcher}),today);}catch{return json(409,{error:'commercial_records_not_verified'});}
-  if(path.endsWith('/preview'))return json(200,{state:'preview',plan:data.plan,revision:data.revision,contractVersion:data.contractVersion,licenseVersion:data.licenseVersion,activationPerformed:false});
+  const sync=path.endsWith('/sync')||path.endsWith('/sync-preview');
+  let data;try{data=await prepareCommercialPlan(raw.contractId,await fetchCommercialRecords({project,id:raw.contractId,authorization:request.headers.get('authorization'),fetcher}),today,{sync});}catch{return json(409,{error:'commercial_records_not_verified'});}
+  if(path.endsWith('/preview')||path.endsWith('/sync-preview'))return json(200,{state:'preview',plan:data.plan,licenseState:data.entitlement.state,revision:data.revision,contractVersion:data.contractVersion,licenseVersion:data.licenseVersion,activationPerformed:false});
   if(raw.revision!==data.revision)return json(409,{error:'commercial_revision_changed'});
   let infra;try{if(env.NEXORA_QA_PROVISION!=='enabled')throw Error();infra=infrastructure??createCloudflareQaInfrastructure(env);}catch{return json(503,{error:'provision_adapter_not_configured'});}
+  if(sync){try{const ledger=journal??provisionJournal(env.NEXORA_PROVISION_JOURNAL);const row=await ledger.get(raw.contractId);const result=await infra.adapter.syncEntitlement(row,data.entitlement);return json(200,{state:result,licenseVersion:data.licenseVersion,licenseState:data.entitlement.state,activationPerformed:false});}catch{return json(409,{error:'license_sync_review_required'});}}
   let ledger,claim;try{ledger=journal??provisionJournal(env.NEXORA_PROVISION_JOURNAL);claim=await ledger.claim({contractId:raw.contractId,revision:data.revision,uid:admin.uid});}catch{return json(503,{error:'provision_journal_unavailable'});}
   if(!claim.claimed){const row=claim.row;if(row.revision!==data.revision)return json(409,{error:'existing_operation_revision_changed'});if(row.state==='schema-ready')return json(200,{state:row.state,databaseId:row.databaseId,databaseName:row.databaseName,activationPerformed:false,credentialsIssued:false});return json(409,{error:'provision_review_required',state:row.state,activationPerformed:false});}
   let createdId;try{const result=await prepare(data.input,infra);createdId=result.databaseId;await infra.adapter.initialize(result.databaseId,data.entitlement);await ledger.finish({contractId:raw.contractId,revision:data.revision,result});return json(201,{state:result.state,databaseId:result.databaseId,databaseName:result.databaseName,activationPerformed:false,credentialsIssued:false});}

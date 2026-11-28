@@ -3,6 +3,7 @@ const digest=/^[a-f0-9]{64}$/,id=/^LOTIGEST__qa-[a-z0-9-]{3,55}$/,uuid=/^[a-f0-9
 export function provisionJournal(db){
  if(!db)throw Error('Journal required');
  return {
+ async get(contractId){if(!id.test(contractId))throw Error('Invalid operation');const row=await db.prepare("SELECT contract_id AS contractId,revision,state,database_id AS databaseId,database_name AS databaseName FROM provision_operations WHERE contract_id=?").bind(contractId).first();return row?{...row}:null;},
  async claim({contractId,revision,uid}){
   if(!id.test(contractId)||!digest.test(revision)||typeof uid!=='string'||!uid||uid.length>128)throw Error('Invalid operation');
   const res=await db.prepare("INSERT INTO provision_operations(contract_id,revision,requested_by,state) VALUES(?,?,?,'running') ON CONFLICT(contract_id) DO NOTHING").bind(contractId,revision,uid).run();

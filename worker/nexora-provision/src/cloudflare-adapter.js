@@ -2,6 +2,7 @@
 import {pinnedSchema} from './pinned-schema.js';
 import {initializationSql} from './initialization-schema.js';
 import {licensePeriod} from '../../../commercial-entitlement-core.js';
+import {entitlementValues,currentValues,validateTarget,entitlementTransition} from './entitlement-sync.js';
 const account=/^[a-f0-9]{32}$/,uuid=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 const namePattern=/^lotigest-qa_[a-z0-9_]{3,55}$/;
 export function createCloudflareQaInfrastructure(env,{fetcher=fetch}={}){
@@ -46,6 +47,15 @@ export function createCloudflareQaInfrastructure(env,{fetcher=fetch}={}){
    return {tables:tables.length,...c};
   },
   async apply(db,sql){if(!pinnedSchema.some(x=>x.sql===sql))throw Error('SQL no pertenece al esquema fijado.');await query(db,sql);},
+  async syncEntitlement(row,e){
+   const db=validateTarget(row,e,protectedIds),name=row.databaseName;
+   const verifiedQuery=async(sql,params)=>{const d=(await request('/'+db)).result;if(d?.uuid!==db||d.name!==name)throw Error('D1 QA no confirmada.');const r=(await request('/'+db+'/query','POST',{sql,...(params?{params}: {})})).result;if(!Array.isArray(r)||r.length!==1||r[0].success!==true)throw Error('Consulta no confirmada.');return r[0];};
+   const read=async()=>{const rows=(await verifiedQuery("SELECT l.* FROM nexora_qa_entitlement l JOIN nexora_installation_identity i ON i.installation_id=l.installation_id WHERE i.singleton=1 AND i.environment='qa' AND i.installation_id=?",[e.installationId])).results;if(rows.length!==1)throw Error('Identidad QA no confirmada.');return rows[0];};
+   const old=await read(),transition=entitlementTransition(old,e);if(transition==='unchanged')return 'unchanged';
+   const updated=await verifiedQuery("UPDATE nexora_qa_entitlement SET license_version=?,state=?,expires_on=?,grace_until=? WHERE installation_id=? AND contract_id=? AND license_version=? AND contract_version=? AND plan_code=? AND starts_on=? AND state=? AND expires_on=? AND grace_until=? AND EXISTS(SELECT 1 FROM nexora_installation_identity WHERE singleton=1 AND environment='qa' AND installation_id=?)",[String(e.licenseVersion),e.state,e.expiresOn,e.graceUntil,e.installationId,e.contractId,String(old.license_version),String(old.contract_version),old.plan_code,old.starts_on,old.state,old.expires_on,old.grace_until,e.installationId]);
+   const after=await read();if(JSON.stringify(currentValues(after))!==JSON.stringify(entitlementValues(e)))throw Error('Conflicto de sincronización.');
+   return updated.meta?.changes===1?'synchronized':'unchanged';
+  },
   async initialize(db,e){
    await assertNew(db);const name=created.get(db);const days=(Date.parse(e.graceUntil)-Date.parse(e.expiresOn))/86400000;const period=licensePeriod(e.startsOn,e.expiresOn,days);
    if(!/^qa-[a-z0-9-]{3,55}$/.test(e.installationId)||name!=='lotigest-'+e.installationId.replaceAll('-','_')||e.contractId!=='LOTIGEST__'+e.installationId||!Number.isSafeInteger(e.licenseVersion)||e.licenseVersion<1||!Number.isSafeInteger(e.contractVersion)||e.contractVersion<1||e.state!=='issued'||period.graceUntil!==e.graceUntil||!['promocion','profesional','empresarial','corporativo'].includes(e.planCode))throw Error('Licencia inicial QA no válida.');
