@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {generateKeyPairSync,createSign} from 'node:crypto';
-import {verifyFirebaseAdmin,AuthFailure} from '../src/auth.js';
+import {verifyFirebaseAdmin,AuthFailure,firebaseProject} from '../src/auth.js';
 const {privateKey,publicKey}=generateKeyPairSync('rsa',{modulusLength:2048});
 const kid='test-firebase-key';
 const jwk={...publicKey.export({format:'jwk'}),kid,kty:'RSA',alg:'RS256',use:'sig'};
@@ -53,4 +53,14 @@ test('none, HS256, missing token and malformed JWT cannot authorize',async()=>{
   await assert.rejects(()=>verifyFirebaseAdmin('Bearer '+sign(claims,h),active,opts),e=>e.status===401);
  for(const token of ['','Bearer broken','Basic abcd'])
   await assert.rejects(()=>verifyFirebaseAdmin(token,active,opts),e=>e.status===401);
+});
+
+test('QA requires an independent Firebase project and rejects signed production tokens',async()=>{
+ const env={...active,NEXORA_ENVIRONMENT:'qa',NEXORA_FIREBASE_PROJECT_ID:'nexora-control-qa-test'};
+ const qa={...claims,aud:env.NEXORA_FIREBASE_PROJECT_ID,iss:'https://securetoken.google.com/'+env.NEXORA_FIREBASE_PROJECT_ID};
+ assert.equal((await verifyFirebaseAdmin('Bearer '+sign(qa),env,opts)).project,env.NEXORA_FIREBASE_PROJECT_ID);
+ await assert.rejects(()=>verifyFirebaseAdmin('Bearer '+sign(),env,opts),e=>e.status===401);
+ await assert.rejects(()=>verifyFirebaseAdmin('Bearer '+sign(qa),active,opts),e=>e.status===401);
+ for(const project of [undefined,'nexora-control-717c6','https://invalid.example'])assert.throws(()=>firebaseProject({...env,NEXORA_FIREBASE_PROJECT_ID:project},true),e=>e.status===503);
+ assert.throws(()=>firebaseProject(active,true),e=>e.status===503);
 });

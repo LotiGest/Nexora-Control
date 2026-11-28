@@ -1,4 +1,4 @@
-import {verifyFirebaseAdmin,AuthFailure} from '../../nexora-licencias/src/auth.js';
+import {verifyFirebaseAdmin,AuthFailure,firebaseProject} from '../../nexora-licencias/src/auth.js';
 import {readJsonLimited} from '../../nexora-licencias/src/proposal.js';
 import {allocation,validateCloseMonth} from '../../../finance-profit.js';
 import {normalizePayment} from '../../../finance-core.js';
@@ -13,7 +13,7 @@ const identifier=x=>typeof x==='string'&&/^(SIAC|SINDEX|LOTIGEST)__[a-z0-9][a-z0
 async function body(request){return readJsonLimited(request,4096);}
 const civilDay=now=>new Intl.DateTimeFormat('sv-SE',{timeZone:'America/Tegucigalpa',year:'numeric',month:'2-digit',day:'2-digit'}).format(now());
 const cashDate=(date,now)=>{isoDate(date);if(date>civilDay(now))throw Error('No se permiten movimientos de caja con fecha futura.');return date;};
-async function calendarFor(id,token,fetcher){const url='https://firestore.googleapis.com/v1/projects/nexora-control-717c6/databases/(default)/documents/nexoraBillingCalendars/'+encodeURIComponent(id);
+async function calendarFor(id,token,fetcher,project){const url='https://firestore.googleapis.com/v1/projects/'+encodeURIComponent(project)+'/databases/(default)/documents/nexoraBillingCalendars/'+encodeURIComponent(id);
  const response=await fetcher(url,{headers:{authorization:token},redirect:'manual'});if(!response.ok)throw Error('No se pudo verificar el calendario en Firebase.');
  const source=(await response.json()).fields;if(!source)throw Error('Calendario inexistente.');
  function value(f){if(f?.stringValue!==undefined)return f.stringValue;if(f?.integerValue!==undefined)return Number(f.integerValue);if(f?.arrayValue)return (f.arrayValue.values||[]).map(value);if(f?.mapValue)return Object.fromEntries(Object.entries(f.mapValue.fields||{}).map(([k,v])=>[k,value(v)]));return undefined;}
@@ -26,10 +26,10 @@ export function createFinanceWorker({verify=verifyFirebaseAdmin,fetcher=fetch,no
  if(request.method==='OPTIONS')return new Response(null,{status:204,headers:{'access-control-allow-origin':ORIGIN,'access-control-allow-headers':'authorization, content-type','access-control-allow-methods':'GET, POST, OPTIONS','vary':'Origin'}});
  if(!path.startsWith('/api/finance/'))return json(404,{error:'not_found'},origin);
  if(!env.NEXORA_FINANCE_DB||!env.NEXORA_ADMIN_UIDS)return json(503,{error:'finance_not_configured'},origin);
- let admin;try{admin=await verify(request.headers.get('authorization'),env);}catch(e){return json(e instanceof AuthFailure?e.status:503,{error:'authentication_failed'},origin);}
+ let admin,project;try{project=firebaseProject(env,true);admin=await verify(request.headers.get('authorization'),env);if(admin.project!==project)throw new AuthFailure(403,'Proyecto de sesión incorrecto.');}catch(e){return json(e instanceof AuthFailure?e.status:503,{error:'authentication_failed'},origin);}
  try{
   if(path==='/api/finance/payment'&&request.method==='POST'){
-   const raw=await body(request),id=operationId(raw.operationId),p=normalizePayment(raw);cashDate(p.date,now);const calendar=await calendarFor(identifier(p.contractId),request.headers.get('authorization'),fetcher);
+   const raw=await body(request),id=operationId(raw.operationId),p=normalizePayment(raw);cashDate(p.date,now);const calendar=await calendarFor(identifier(p.contractId),request.headers.get('authorization'),fetcher,project);
    const [code,sequenceText]=p.chargeId.split('__'),sequence=Number(sequenceText),line=calendar.lines.map(normalizeLine).find(l=>l.code===code);
    if(!line||!Number.isInteger(sequence)||sequence>1200||sequence<0)throw Error('Cuota inexistente.');
    const step={monthly:1,quarterly:3,annual:12}[line.cadence];

@@ -44,7 +44,18 @@ async function publicSigningKey(kid,now,fetchKeys){
  if(!keysCache.keys.has(kid))throw new AuthFailure(401,'Firma de Firebase no reconocida.');
  return keysCache.keys.get(kid);
 }
+export function firebaseProject(env={},requireQa=false){
+ const mode=env.NEXORA_ENVIRONMENT;
+ if(mode==='qa'){
+  const id=env.NEXORA_FIREBASE_PROJECT_ID;
+  if(typeof id!=='string'||! /^[a-z][a-z0-9-]{4,28}[a-z0-9]$/.test(id)||id===PROJECT_ID)throw new AuthFailure(503,'Firebase QA aislado no configurado.');
+  return id;
+ }
+ if(requireQa||(mode!==undefined&&mode!=='production')||(env.NEXORA_FIREBASE_PROJECT_ID&&env.NEXORA_FIREBASE_PROJECT_ID!==PROJECT_ID))throw new AuthFailure(503,'Ambiente de autenticación no autorizado.');
+ return PROJECT_ID;
+}
 export async function verifyFirebaseAdmin(header,env={},options={}){
+ const project=firebaseProject(env);
  if(typeof header!=='string'||!header.startsWith('Bearer ')||header.length>10000)throw new AuthFailure(401,'Iniciá sesión con Google para continuar.');
  const token=header.slice(7).trim(),parts=token.split('.');
  if(parts.length!==3)throw new AuthFailure(401,'Token no válido.');
@@ -54,7 +65,7 @@ export async function verifyFirebaseAdmin(header,env={},options={}){
  if(protectedHeader?.alg!=='RS256'||typeof protectedHeader.kid!=='string'||protectedHeader.kid.length>128
   ||(protectedHeader.typ!==undefined&&protectedHeader.typ!=='JWT'))throw new AuthFailure(401,'Encabezado de autenticación inválido.');
  const now=Math.floor((options.now??Date.now())/1000);
- if(claims?.aud!==PROJECT_ID||claims.iss!=='https://securetoken.google.com/'+PROJECT_ID||
+ if(claims?.aud!==project||claims.iss!=='https://securetoken.google.com/'+project||
   typeof claims.sub!=='string'||claims.sub.length<1||claims.sub.length>128||
   !Number.isInteger(claims.exp)||claims.exp<=now||
   !Number.isInteger(claims.iat)||claims.iat>now+60||claims.iat<now-3660||
@@ -70,5 +81,5 @@ export async function verifyFirebaseAdmin(header,env={},options={}){
  if(!ok)throw new AuthFailure(401,'Firma de autenticación incorrecta.');
  if(!ADMITTED_EMAILS.has(claims.email.trim().toLowerCase())||
   !allowlistedUid(env.NEXORA_ADMIN_UIDS,claims.sub))throw new AuthFailure(403,'Cuenta sin autorización para administrar licencias.');
- return Object.freeze({uid:claims.sub,email:claims.email.trim().toLowerCase(),project:PROJECT_ID});
+ return Object.freeze({uid:claims.sub,email:claims.email.trim().toLowerCase(),project});
 }
