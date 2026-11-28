@@ -3,6 +3,7 @@ import {pinnedSchema} from './pinned-schema.js';
 import {initializationSql} from './initialization-schema.js';
 import {licensePeriod} from '../../../commercial-entitlement-core.js';
 import {entitlementValues,currentValues,validateTarget,entitlementTransition} from './entitlement-sync.js';
+import {initialStateRows} from './initial-company.js';
 const account=/^[a-f0-9]{32}$/,uuid=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 const namePattern=/^lotigest-qa_[a-z0-9_]{3,55}$/;
 export function createCloudflareQaInfrastructure(env,{fetcher=fetch}={}){
@@ -56,15 +57,19 @@ export function createCloudflareQaInfrastructure(env,{fetcher=fetch}={}){
    const after=await read();if(JSON.stringify(currentValues(after))!==JSON.stringify(entitlementValues(e)))throw Error('Conflicto de sincronización.');
    return updated.meta?.changes===1?'synchronized':'unchanged';
   },
-  async initialize(db,e){
+  async initialize(db,e,state){
    await assertNew(db);const name=created.get(db);const days=(Date.parse(e.graceUntil)-Date.parse(e.expiresOn))/86400000;const period=licensePeriod(e.startsOn,e.expiresOn,days);
    if(!/^qa-[a-z0-9-]{3,55}$/.test(e.installationId)||name!=='lotigest-'+e.installationId.replaceAll('-','_')||e.contractId!=='LOTIGEST__'+e.installationId||!Number.isSafeInteger(e.licenseVersion)||e.licenseVersion<1||!Number.isSafeInteger(e.contractVersion)||e.contractVersion<1||e.state!=='issued'||period.graceUntil!==e.graceUntil||!['promocion','profesional','empresarial','corporativo'].includes(e.planCode))throw Error('Licencia inicial QA no válida.');
    const counts=await adapter.inspect(db);if(counts.tables<33||counts.users!==0||counts.clients!==0||counts.sessions!==0)throw Error('Instalación QA no vacía.');
+   if(!state||state.version!==3||!['lots','clients','sales','payments'].every(k=>Array.isArray(state[k])&&state[k].length===0))throw Error('Estado inicial no vacío.');
+   const meta=(await query(db,'SELECT (SELECT count(*) FROM app_records) AS records,(SELECT revision FROM app_meta WHERE id=1) AS revision'))[0].results[0];if(meta.records!==0||meta.revision!==0)throw Error('Estado de aplicación ya existente.');
    for(const sql of initializationSql)await query(db,sql);
    await query(db,"INSERT INTO nexora_installation_identity(singleton,installation_id,environment) VALUES(1,?,'qa')",[e.installationId]);
    await query(db,'INSERT INTO nexora_qa_entitlement(installation_id,contract_id,license_version,contract_version,plan_code,state,starts_on,expires_on,grace_until) VALUES(?,?,?,?,?,?,?,?,?)',[e.installationId,e.contractId,String(e.licenseVersion),String(e.contractVersion),e.planCode,e.state,e.startsOn,e.expiresOn,e.graceUntil]);
    const row=(await query(db,'SELECT installation_id,contract_id,license_version,contract_version,plan_code,state,starts_on,expires_on,grace_until FROM nexora_qa_entitlement'))[0].results;
    if(row.length!==1||JSON.stringify([row[0].installation_id,row[0].contract_id,row[0].license_version,row[0].contract_version,row[0].plan_code,row[0].state,row[0].starts_on,row[0].expires_on,row[0].grace_until])!==JSON.stringify([e.installationId,e.contractId,e.licenseVersion,e.contractVersion,e.planCode,e.state,e.startsOn,e.expiresOn,e.graceUntil]))throw Error('Licencia inicial QA no confirmada.');
+   const rows=initialStateRows(state);await query(db,"INSERT INTO app_records(key,payload) SELECT json_extract(value,'$.key'),json_extract(value,'$.payload') FROM json_each(?) WHERE EXISTS(SELECT 1 FROM nexora_installation_identity WHERE singleton=1 AND environment='qa' AND installation_id=?)",[JSON.stringify(rows),e.installationId]);
+   const saved=(await query(db,'SELECT key,payload FROM app_records ORDER BY key'))[0].results;if(JSON.stringify(saved.map(x=>[x.key,x.payload]))!==JSON.stringify(rows.map(x=>[x.key,x.payload])))throw Error('Estado inicial QA no confirmado.');
   }
  };
  return {adapter,schema:pinnedSchema,protectedIds,expectedAccount:id};
