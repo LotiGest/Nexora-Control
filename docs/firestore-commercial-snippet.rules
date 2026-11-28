@@ -47,15 +47,17 @@ function ncContract(d,id) {
  && ncAddon(d.lines,d.product,5)
  && ncAddon(d.lines,d.product,6)
  && ncAddon(d.lines,d.product,7)
- && ncAddon(d.lines,d.product,8)
+ && ncMeta(d);
+}
+function ncContractTail(d) {
+ return ncAddon(d.lines,d.product,8)
  && ncAddon(d.lines,d.product,9)
  && ncAddon(d.lines,d.product,10)
  && ncAddon(d.lines,d.product,11)
  && ncAddon(d.lines,d.product,12)
  && ncAddon(d.lines,d.product,13)
  && ncAddon(d.lines,d.product,14)
- && ncAddon(d.lines,d.product,15)
- && ncMeta(d);
+ && ncAddon(d.lines,d.product,15);
 }
 function ncHasRevision(col,id,d) {
  let p = /databases/$(database)/documents/$(col)/$(id)/revisions/$(d.revisionKey);
@@ -87,8 +89,10 @@ match /nexoraCommercialContracts/{id} {
  allow delete: if false;
  match /revisions/{rev} {
   allow get,list: if nexoraLicenseAdmin();
-  // The matching head must be written in this atomic batch and its own rule validates every line.
-  allow create: if nexoraLicenseAdmin() && ncRevisionMatches('nexoraCommercialContracts',id,rev,request.resource.data);
+  // The head and revision are required to be identical and created atomically.
+  // Split validation across the two writes to stay under Firestore's expression budget.
+  allow create: if nexoraLicenseAdmin() && ncRevisionMatches('nexoraCommercialContracts',id,rev,request.resource.data)
+   && ncContractTail(request.resource.data);
   allow update,delete: if false;
  }
 }
