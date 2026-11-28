@@ -17,3 +17,29 @@ export function reconcile(calendars,payments,from,to,asOf){
  return {charges,receipts,scheduledCents,paidCents,pendingCents,overdueCents,byProduct};
 }
 export function csvReport(charges){const cell=v=>'"'+String(v??'').replaceAll('"','""')+'"';return '\uFEFF'+[['Empresa','Producto','Contrato','Cuota','Vence','Importe HNL','Abonado HNL','Saldo HNL'],...charges.map(c=>[c.company,c.product,c.contractId,c.id,c.due,(c.amountCents/100).toFixed(2),(c.paidCents/100).toFixed(2),(c.balanceCents/100).toFixed(2)])].map(row=>row.map(cell).join(',')).join('\r\n');}
+
+/** Match immutable calendar obligations against confirmed D1 charge balances.
+ * Payment dates may fall outside the due-date period, so the ledger's cumulative
+ * paidCents is authoritative. Absence of a materialized charge means no payment.
+ */
+export function reconcileLedger(calendars,ledger,from,to,asOf){
+ if(!Array.isArray(ledger))throw Error('Saldos financieros no verificados.');
+ const report=reconcile(calendars,[],from,to,asOf);
+ const expected=new Map(report.charges.map(c=>[c.contractId+'|'+c.id,c]));
+ const seen=new Set();
+ for(const row of ledger){
+  const key=row.contractId+'|'+row.chargeId,c=expected.get(key);
+  if(!c||seen.has(key)||row.due!==c.due||row.amountCents!==c.amountCents||row.product!==c.product)throw Error('El libro financiero no coincide con el calendario.');
+  const paid=checkedCents(row.paidCents);
+  if(paid>c.amountCents)throw Error('Abono superior a la obligación.');
+  seen.add(key);c.paidCents=paid;
+ }
+ report.paidCents=0;report.pendingCents=0;report.overdueCents=0;report.byProduct={};
+ for(const c of report.charges){
+  c.balanceCents=c.amountCents-c.paidCents;c.overdue=c.due<asOf&&c.balanceCents>0;
+  report.paidCents+=c.paidCents;report.pendingCents+=c.balanceCents;
+  if(c.overdue)report.overdueCents+=c.balanceCents;
+  report.byProduct[c.product]=(report.byProduct[c.product]||0)+c.paidCents;
+ }
+ return report;
+}
