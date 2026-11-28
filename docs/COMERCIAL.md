@@ -34,3 +34,6 @@ Invitación de 256 bits, vigencia máxima 24 horas, hash contextual a instalaci�
 
 ### Evidencia D1 real del acceso inicial (28/11/2026)
 Migración de invitaciones aplicada únicamente a las dos D1 QA nuevas. Con credenciales aleatorias descartables y mismo usuario ficticio: invitación cruzada, expirada y reutilizada produjeron 0/0/0 cambios; cada invitación válida produjo 1/1/1 (usuario/salt/consumo); consulta de hash propio devolvió un usuario y consulta cruzada cero en ambas direcciones. Se retiraron usuarios, salts e invitaciones ficticios al terminar. No se probó HTTP, login con cookie ni licencias; no se publicó el adaptador. Los tokens no se registraron ni se devolvieron al chat.
+
+## Banco de pruebas HTTP de autenticación
+Worker QA separado del producto completo. Reutiliza sin modificaciones los handlers session.js/shared.js de LotiGest `24b74215e9d974acea1d22419615106f26d352c7`. Verifica identidad fija de D1 contra variable de entorno antes de cualquier ruta; no sirve expedientes, finanzas, mapas ni datos de clientes. Página genérica con activación y contraseña elegida, derivación PBKDF2 compatible, login y cierre. Pruebas de cookie y credencial cruzadas con SQLite. No equivale al despliegue completo ni activa licencias. No publicar en main.
