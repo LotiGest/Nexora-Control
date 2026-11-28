@@ -1,4 +1,5 @@
 import {verifyFirebaseAdmin,AuthFailure} from '../../nexora-licencias/src/auth.js';
+import {allocation,validateCloseMonth} from '../../../finance-profit.js';
 import {normalizePayment} from '../../../finance-core.js';
 import {addMonths,isoDate} from '../../../commercial-billing-core.js';
 import {checkedCents,normalizeLine} from '../../../commercial-core.js';
@@ -48,6 +49,22 @@ export function createFinanceWorker({verify=verifyFirebaseAdmin,fetcher=fetch}={
    ]);
    if(!same(results[1].results[0],{category,amountCents,date,reference,recordedBy:admin.uid}))return json(409,{error:'operation_conflict',message:'La operación ya existe con otros datos.'},origin);
    return json(results[0].meta.changes?201:200,{id,receipt:'NXG-'+id,amountCents,date,category,reference},origin);
+  }
+  if(path==='/api/finance/closures'&&request.method==='GET'){
+   const year=url.searchParams.get('year');if(!/^20\d{2}$/.test(year||''))throw Error('Año no válido.');
+   const rows=await env.NEXORA_FINANCE_DB.prepare('SELECT month,revenue_cents AS revenueCents,expenses_cents AS expensesCents,savings_bp AS savingsBp,partner_a_bp AS partnerABp,closed_by AS closedBy,closed_at AS closedAt FROM finance_closures WHERE month BETWEEN ? AND ? ORDER BY month').bind(year+'-01',year+'-12').all();
+   return json(200,{closures:rows.results.map(r=>({...r,...allocation(r.revenueCents,r.expensesCents,r.savingsBp,r.partnerABp)}))},origin);
+  }
+  if(path==='/api/finance/close'&&request.method==='POST'){
+   const x=await body(request),today=new Intl.DateTimeFormat('sv-SE',{timeZone:'America/Tegucigalpa',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date()),month=validateCloseMonth(x.month,today);
+   allocation(0,0,x.savingsBp,x.partnerABp);
+   const from=month+'-01',to=addMonths(from,1);
+   const rows=await env.NEXORA_FINANCE_DB.batch([
+    env.NEXORA_FINANCE_DB.prepare('INSERT INTO finance_closures(month,revenue_cents,expenses_cents,savings_bp,partner_a_bp,closed_by) SELECT ?,COALESCE((SELECT SUM(amount_cents) FROM payments WHERE paid_on>=? AND paid_on<?),0),COALESCE((SELECT SUM(amount_cents) FROM expenses WHERE spent_on>=? AND spent_on<?),0),?,?,? ON CONFLICT(month) DO NOTHING').bind(month,from,to,from,to,x.savingsBp,x.partnerABp,admin.uid),
+    env.NEXORA_FINANCE_DB.prepare('SELECT month,revenue_cents AS revenueCents,expenses_cents AS expensesCents,savings_bp AS savingsBp,partner_a_bp AS partnerABp,closed_by AS closedBy,closed_at AS closedAt FROM finance_closures WHERE month=?').bind(month)
+   ]);
+   const r=rows[1].results[0];if(!r||r.savingsBp!==x.savingsBp||r.partnerABp!==x.partnerABp)return json(409,{error:'closure_conflict',message:'El mes ya fue cerrado con otra distribución.'},origin);
+   return json(rows[0].meta.changes?201:200,{...r,...allocation(r.revenueCents,r.expensesCents,r.savingsBp,r.partnerABp)},origin);
   }
   if(path==='/api/finance/report'&&request.method==='GET'){
    const from=isoDate(url.searchParams.get('from')),to=isoDate(url.searchParams.get('to'));if(to<from||Number(to.slice(0,4))-Number(from.slice(0,4))>1)throw Error('Rango máximo: dos años.');
