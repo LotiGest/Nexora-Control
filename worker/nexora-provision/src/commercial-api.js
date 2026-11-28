@@ -9,6 +9,7 @@ import {installationPlan} from './plan.js';
 import {prepareQaD1} from './qa-d1.js';
 import {digest} from './initial-access.js';
 import {provisionJournal} from './journal.js';
+import {createCloudflareQaInfrastructure} from './cloudflare-adapter.js';
 const key=/^LOTIGEST__qa-[a-z0-9-]{3,55}$/;
 const collections=['nexoraCompanyProfiles','nexoraCommercialContracts','nexoraBillingCalendars','nexoraCommercialLicenses'];
 const version=x=>Number.isSafeInteger(x)&&x>0;
@@ -58,10 +59,10 @@ export function createProvisionWorker({verify=verifyFirebaseAdmin,fetcher=fetch,
   let data;try{data=await prepareCommercialPlan(raw.contractId,await fetchCommercialRecords({project,id:raw.contractId,authorization:request.headers.get('authorization'),fetcher}),today);}catch{return json(409,{error:'commercial_records_not_verified'});}
   if(path.endsWith('/preview'))return json(200,{state:'preview',plan:data.plan,revision:data.revision,contractVersion:data.contractVersion,licenseVersion:data.licenseVersion,activationPerformed:false});
   if(raw.revision!==data.revision)return json(409,{error:'commercial_revision_changed'});
-  if(!infrastructure||env.NEXORA_QA_PROVISION!=='enabled')return json(503,{error:'provision_adapter_not_configured'});
+  let infra;try{if(env.NEXORA_QA_PROVISION!=='enabled')throw Error();infra=infrastructure??createCloudflareQaInfrastructure(env);}catch{return json(503,{error:'provision_adapter_not_configured'});}
   let ledger,claim;try{ledger=journal??provisionJournal(env.NEXORA_PROVISION_JOURNAL);claim=await ledger.claim({contractId:raw.contractId,revision:data.revision,uid:admin.uid});}catch{return json(503,{error:'provision_journal_unavailable'});}
   if(!claim.claimed){const row=claim.row;if(row.revision!==data.revision)return json(409,{error:'existing_operation_revision_changed'});if(row.state==='schema-ready')return json(200,{state:row.state,databaseId:row.databaseId,databaseName:row.databaseName,activationPerformed:false,credentialsIssued:false});return json(409,{error:'provision_review_required',state:row.state,activationPerformed:false});}
-  try{const result=await prepare(data.input,infrastructure);await ledger.finish({contractId:raw.contractId,revision:data.revision,result});return json(201,{state:result.state,databaseId:result.databaseId,databaseName:result.databaseName,activationPerformed:false,credentialsIssued:false});}
+  try{const result=await prepare(data.input,infra);await ledger.finish({contractId:raw.contractId,revision:data.revision,result});return json(201,{state:result.state,databaseId:result.databaseId,databaseName:result.databaseName,activationPerformed:false,credentialsIssued:false});}
   catch(e){try{await ledger.fail({contractId:raw.contractId,revision:data.revision,databaseId:e?.databaseId});}catch{}return json(409,{error:'provision_review_required',activationPerformed:false});}
  }};
 }
