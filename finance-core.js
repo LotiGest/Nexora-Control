@@ -2,7 +2,7 @@ import {buildCalendar,isoDate} from './commercial-billing-core.js';
 import {checkedCents,product} from './commercial-core.js';
 export function normalizePayment(p){
  if(!p||typeof p!=='object'||typeof p.contractId!=='string'||!/^(SIAC|SINDEX|LOTIGEST)__[a-z0-9][a-z0-9-]{2,59}$/.test(p.contractId))throw Error('Contrato no válido.');
- if(typeof p.chargeId!=='string'||!/^[a-z0-9][a-z0-9-]{2,59}__\d{1,4}$/.test(p.chargeId))throw Error('Cuota no válida.');
+ if(typeof p.chargeId!=='string'||!/^[a-z0-9][a-z0-9-]{2,59}__(?:0|[1-9]\d{0,3})$/.test(p.chargeId))throw Error('Cuota no válida.');
  const amountCents=checkedCents(p.amountCents);if(!amountCents)throw Error('El abono debe ser mayor que cero.');
  const date=isoDate(p.date);const reference=String(p.reference??'').trim();if(!reference||reference.length>100)throw Error('Indicá una referencia de hasta 100 caracteres.');
  return {contractId:p.contractId,chargeId:p.chargeId,amountCents,date,reference};

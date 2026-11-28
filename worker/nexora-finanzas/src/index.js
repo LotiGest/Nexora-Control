@@ -24,10 +24,10 @@ export function createFinanceWorker({verify=verifyFirebaseAdmin,fetcher=fetch}={
   if(path==='/api/finance/payment'&&request.method==='POST'){
    const p=normalizePayment(await body(request)),calendar=await calendarFor(identifier(p.contractId),request.headers.get('authorization'),fetcher);
    const [code,sequenceText]=p.chargeId.split('__'),sequence=Number(sequenceText),line=calendar.lines.map(normalizeLine).find(l=>l.code===code);
-   if(!line||!Number.isInteger(sequence)||sequence>120||sequence<0)throw Error('Cuota inexistente.');
+   if(!line||!Number.isInteger(sequence)||sequence>1201||sequence<0)throw Error('Cuota inexistente.');
    const step={monthly:1,quarterly:3,annual:12}[line.cadence];
-   if(sequence>0&&(!step||!line.feeCents||(line.cycles&&sequence>line.cycles)))throw Error('Cuota inexistente.');
-   const due=sequence===0?isoDate(calendar.initialDue):addMonths(calendar.firstDue,(sequence-1)*step);
+   if(sequence>0&&(!step||!line.feeCents||(sequence-1)*step>1200||(line.cycles&&sequence>line.cycles)))throw Error('Cuota inexistente.');
+   const due=sequence===0?isoDate(calendar.initialDue):isoDate(addMonths(calendar.firstDue,(sequence-1)*step));
    const charge={due,kind:sequence===0?'initial':'recurring',amountCents:sequence===0?line.initialCents:line.feeCents};
    if(!charge.amountCents)throw Error('Cuota sin importe.');
    const id=crypto.randomUUID();await env.NEXORA_FINANCE_DB.batch([
