@@ -1,5 +1,5 @@
 import {normalizeContract,normalizeCatalog,contractId} from './commercial-core.js';
-import {isoDate} from './commercial-billing-core.js';
+import {isoDate,addMonths,buildCalendar,sumCalendar} from './commercial-billing-core.js';
 export function compareAgreementPrices(lines,catalog){
  const current=new Map(catalog.map(r=>[r.product+'__'+r.code,r]));
  return lines.map(l=>{const raw=current.get(l.product+'__'+l.code);if(!raw)return {code:l.code,state:'unavailable'};const r=normalizeCatalog(raw);if(!r.enabled||raw.version!==l.catalogVersion||r.cadence!==l.cadence||r.cycles!==l.cycles)return {code:l.code,state:'not-comparable'};return {code:l.code,state:'comparable',initialDifferenceCents:r.initialCents-l.initialCents,feeDifferenceCents:r.feeCents-l.feeCents};});
@@ -30,4 +30,17 @@ export function revisionDiff(previous,current){
   if(['initialCents','feeCents','cadence','cycles','catalogVersion','name','kind'].some(k=>before[k]!==after[k]))changed.push({code,type:'changed',before,after});
  }
  return changed;
+}
+
+// Preview only: the existing calendar is never changed, and no charge identifiers are issued.
+export function renewalPreview(contract,calendar,proposal,today){
+ isoDate(today);
+ if(renewalState(proposal,contract,calendar,today)==='stale'||proposal.state!=='pending-review'||proposal.contractId!==calendar.contractId)throw Error('Propuesta desactualizada o retirada.');
+ const from=isoDate(proposal.effectiveOn),to=isoDate(addMonths(from,12));
+ const last=new Date(Date.parse(to+'T00:00:00Z')-86400000).toISOString().slice(0,10);
+ const old=buildCalendar(calendar,from,last);
+ // No assumption that initial installation fees should repeat on renewal.
+ const proposed=buildCalendar({...calendar,initialDue:from,firstDue:from,lines:proposal.lines.map(l=>({...l,initialCents:0}))},from,last);
+ const currentCents=sumCalendar(old),proposedCents=sumCalendar(proposed);
+ return {from,to:last,currentCents,proposedCents,differenceCents:proposedCents-currentCents,currentCount:old.length,proposedCount:proposed.length,requiresLedgerReview:true,mode:'projection-only'};
 }
