@@ -1,4 +1,4 @@
-import {normalizeContract,normalizeCatalog,formatMoney,totals,contractId,nextVersion} from './commercial-core.js';
+import {normalizeContract,normalizeCatalog,contractId} from './commercial-core.js';
 import {isoDate} from './commercial-billing-core.js';
 export function compareAgreementPrices(lines,catalog){
  const current=new Map(catalog.map(r=>[r.product+'__'+r.code,r]));
@@ -15,4 +15,19 @@ export function renewalState(row,contract,calendar,today){
  isoDate(today);if(row.state==='withdrawn')return 'withdrawn';
  if(contract?.status!=='agreed'||contract.version!==row.contractVersion||calendar?.contractVersion!==row.calendarVersion)return 'stale';
  return row.effectiveOn<=today?'due-review':'pending-review';
+}
+
+export function orderedRevisions(rows){
+ const versions=new Set();
+ return rows.map(r=>{if(!Number.isSafeInteger(r.version)||r.version<1||versions.has(r.version))throw Error('Historial de versiones inconsistente.');versions.add(r.version);return r;}).sort((a,b)=>b.version-a.version);
+}
+export function revisionDiff(previous,current){
+ const a=new Map((previous?.lines||[]).map(l=>[l.code,l])),b=new Map((current.lines||[]).map(l=>[l.code,l]));
+ const changed=[];
+ for(const code of new Set([...a.keys(),...b.keys()])){
+  const before=a.get(code),after=b.get(code);
+  if(!before||!after){changed.push({code,type:before?'removed':'added',before:before||null,after:after||null});continue;}
+  if(['initialCents','feeCents','cadence','cycles','catalogVersion','name','kind'].some(k=>before[k]!==after[k]))changed.push({code,type:'changed',before,after});
+ }
+ return changed;
 }
