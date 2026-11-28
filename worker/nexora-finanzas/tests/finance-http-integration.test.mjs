@@ -41,3 +41,13 @@ test('flujo HTTP sobre SQLite: dos administradores, cierre concurrente, reparto 
  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM payments').get().n,1);assert.equal(db.prepare('SELECT COUNT(*) AS n FROM expenses').get().n,1);
  }finally{db.close();}
 });
+
+test('rechaza cobro de obligación materializada con condiciones distintas',async()=>{
+ const {db,adapter}=qaDb();try{
+ db.exec("INSERT INTO charges(contract_id,charge_id,product,company,due_date,kind,amount_cents) VALUES('LOTIGEST__demo','base__0','LOTIGEST','QA','2026-10-01','initial',200000)");
+ const env={NEXORA_FINANCE_DB:adapter,NEXORA_ADMIN_UIDS:'a,b'};
+ const p={operationId:crypto.randomUUID(),contractId:'LOTIGEST__demo',chargeId:'base__0',amountCents:100,date:'2026-10-03',reference:'QA'};
+ const r=await worker.fetch(new Request('https://qa.example.test/api/finance/payment',{method:'POST',headers:{authorization:'Bearer a','content-type':'application/json'},body:JSON.stringify(p)}),env);
+ assert.equal(r.status,409);assert.equal((await r.json()).error,'charge_conflict');assert.equal(db.prepare('SELECT count(*) n FROM payments').get().n,0);assert.equal(db.prepare('SELECT paid_cents FROM charges').get().paid_cents,0);
+ }finally{db.close();}
+});

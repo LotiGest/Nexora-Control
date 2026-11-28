@@ -17,7 +17,8 @@ async function calendarFor(id,token,fetcher){const url='https://firestore.google
  const response=await fetcher(url,{headers:{authorization:token},redirect:'manual'});if(!response.ok)throw Error('No se pudo verificar el calendario en Firebase.');
  const source=(await response.json()).fields;if(!source)throw Error('Calendario inexistente.');
  function value(f){if(f?.stringValue!==undefined)return f.stringValue;if(f?.integerValue!==undefined)return Number(f.integerValue);if(f?.arrayValue)return (f.arrayValue.values||[]).map(value);if(f?.mapValue)return Object.fromEntries(Object.entries(f.mapValue.fields||{}).map(([k,v])=>[k,value(v)]));return undefined;}
- const c=Object.fromEntries(Object.entries(source).map(([k,v])=>[k,value(v)]));if(c.contractId!==id||!Array.isArray(c.lines))throw Error('Calendario inconsistente.');return c;
+ const c=Object.fromEntries(Object.entries(source).map(([k,v])=>[k,value(v)]));if(c.contractId!==id||c.product!==id.split('__')[0]||typeof c.name!=='string'||!c.name.trim()||!Array.isArray(c.lines)||!c.lines.length||c.lines.length>16)throw Error('Calendario inconsistente.');
+ const lines=c.lines.map(normalizeLine);if(lines[0].kind!=='plan'||lines.slice(1).some(l=>l.kind!=='module')||lines.some(l=>l.product!==c.product)||new Set(lines.map(l=>l.code)).size!==lines.length||isoDate(c.firstDue)<isoDate(c.initialDue))throw Error('Calendario inconsistente.');return {...c,lines};
 }
 export function createFinanceWorker({verify=verifyFirebaseAdmin,fetcher=fetch,now=()=>new Date()}={}){return {async fetch(request,env={}){
  const url=new URL(request.url),origin=request.headers.get('origin'),path=url.pathname;
@@ -38,9 +39,10 @@ export function createFinanceWorker({verify=verifyFirebaseAdmin,fetcher=fetch,no
    if(!charge.amountCents)throw Error('Cuota sin importe.');
    const results=await env.NEXORA_FINANCE_DB.batch([
     env.NEXORA_FINANCE_DB.prepare('INSERT INTO charges(contract_id,charge_id,product,company,due_date,kind,amount_cents) SELECT ?,?,?,?,?,?,? WHERE NOT EXISTS(SELECT 1 FROM payments WHERE id=?) ON CONFLICT(contract_id,charge_id) DO NOTHING').bind(p.contractId,p.chargeId,calendar.product,calendar.name,charge.due,charge.kind,charge.amountCents,id),
-    env.NEXORA_FINANCE_DB.prepare('INSERT INTO payments(id,contract_id,charge_id,amount_cents,paid_on,reference,recorded_by) VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING').bind(id,p.contractId,p.chargeId,p.amountCents,p.date,p.reference,admin.uid),
+    env.NEXORA_FINANCE_DB.prepare('INSERT INTO payments(id,contract_id,charge_id,amount_cents,paid_on,reference,recorded_by) SELECT ?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM charges WHERE contract_id=? AND charge_id=? AND product=? AND due_date=? AND kind=? AND amount_cents=?) ON CONFLICT(id) DO NOTHING').bind(id,p.contractId,p.chargeId,p.amountCents,p.date,p.reference,admin.uid,p.contractId,p.chargeId,calendar.product,charge.due,charge.kind,charge.amountCents),
     env.NEXORA_FINANCE_DB.prepare('SELECT id,contract_id AS contractId,charge_id AS chargeId,amount_cents AS amountCents,paid_on AS date,reference,recorded_by AS recordedBy FROM payments WHERE id=?').bind(id)
    ]);
+   if(!results[2].results[0])return json(409,{error:'charge_conflict',message:'La obligación registrada no coincide con el calendario. Revisá antes de cobrar.'},origin);
    if(!same(results[2].results[0],{...p,recordedBy:admin.uid}))return json(409,{error:'operation_conflict',message:'La operación ya existe con otros datos.'},origin);
    return json(results[1].meta.changes?201:200,{id,receipt:'NX-'+id,company:calendar.name,contractId:p.contractId,chargeId:p.chargeId,amountCents:p.amountCents,date:p.date,reference:p.reference},origin);
   }
