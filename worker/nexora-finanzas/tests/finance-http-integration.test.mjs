@@ -18,10 +18,13 @@ const worker=createFinanceWorker({now:()=>new Date('2026-11-28T12:00:00Z'),verif
 test('flujo HTTP sobre SQLite: dos administradores, cierre concurrente, reparto y reintento',async()=>{
  const {db,adapter}=qaDb();try{
  const env={NEXORA_FINANCE_DB:adapter,NEXORA_ADMIN_UIDS:'a,b'};
- const call=(path,body,actor='a')=>worker.fetch(new Request('https://qa.example.test/api/finance/'+path,{method:body?'POST':'GET',headers:{origin:'https://lotigest.github.io',authorization:'Bearer '+actor},body:body?JSON.stringify(body):undefined}),env);
+ const call=(path,body,actor='a')=>worker.fetch(new Request('https://qa.example.test/api/finance/'+path,{method:body?'POST':'GET',headers:{origin:'https://lotigest.github.io',authorization:'Bearer '+actor,...(body?{'content-type':'application/json'}:{})},body:body?JSON.stringify(body):undefined}),env);
  const p={operationId:crypto.randomUUID(),contractId:'LOTIGEST__demo',chargeId:'base__0',amountCents:100001,date:'2026-10-03',reference:'Ficticio'};
  const e={operationId:crypto.randomUUID(),category:'QA',amountCents:20000,date:'2026-10-05',reference:'Ficticio'};
  assert.equal((await call('payment',p,'other')).status,403);
+ assert.equal((await call('payment',{...p,date:'2026-11-29'})).status,400);
+ assert.equal((await call('expense',{...e,date:'2026-11-29'})).status,400);
+ assert.equal((await call('expense',{...e,reference:'x'.repeat(5000)})).status,400);
  assert.equal((await call('payment',p)).status,201);
  assert.equal((await call('expense',e,'b')).status,201);
  const report=await (await call('report?from=2026-01-01&to=2026-12-31')).json();

@@ -1,4 +1,5 @@
 import {verifyFirebaseAdmin,AuthFailure} from '../../nexora-licencias/src/auth.js';
+import {readJsonLimited} from '../../nexora-licencias/src/proposal.js';
 import {allocation,validateCloseMonth} from '../../../finance-profit.js';
 import {normalizePayment} from '../../../finance-core.js';
 import {addMonths,isoDate} from '../../../commercial-billing-core.js';
@@ -9,7 +10,9 @@ const bad=(s)=>{throw Error(s)};
 const operationId=x=>typeof x==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(x)?x:bad('Identificador de operación no válido.');
 const same=(row,fields)=>row&&Object.entries(fields).every(([key,value])=>row[key]===value);
 const identifier=x=>typeof x==='string'&&/^(SIAC|SINDEX|LOTIGEST)__[a-z0-9][a-z0-9-]{2,59}$/.test(x)?x:bad('Contrato no válido.');
-async function body(request){const raw=await request.text();if(raw.length>4096)throw Error('Solicitud demasiado grande.');return JSON.parse(raw);}
+async function body(request){return readJsonLimited(request,4096);}
+const civilDay=now=>new Intl.DateTimeFormat('sv-SE',{timeZone:'America/Tegucigalpa',year:'numeric',month:'2-digit',day:'2-digit'}).format(now());
+const cashDate=(date,now)=>{isoDate(date);if(date>civilDay(now))throw Error('No se permiten movimientos de caja con fecha futura.');return date;};
 async function calendarFor(id,token,fetcher){const url='https://firestore.googleapis.com/v1/projects/nexora-control-717c6/databases/(default)/documents/nexoraBillingCalendars/'+encodeURIComponent(id);
  const response=await fetcher(url,{headers:{authorization:token},redirect:'manual'});if(!response.ok)throw Error('No se pudo verificar el calendario en Firebase.');
  const source=(await response.json()).fields;if(!source)throw Error('Calendario inexistente.');
@@ -25,7 +28,7 @@ export function createFinanceWorker({verify=verifyFirebaseAdmin,fetcher=fetch,no
  let admin;try{admin=await verify(request.headers.get('authorization'),env);}catch(e){return json(e instanceof AuthFailure?e.status:503,{error:'authentication_failed'},origin);}
  try{
   if(path==='/api/finance/payment'&&request.method==='POST'){
-   const raw=await body(request),id=operationId(raw.operationId),p=normalizePayment(raw),calendar=await calendarFor(identifier(p.contractId),request.headers.get('authorization'),fetcher);
+   const raw=await body(request),id=operationId(raw.operationId),p=normalizePayment(raw);cashDate(p.date,now);const calendar=await calendarFor(identifier(p.contractId),request.headers.get('authorization'),fetcher);
    const [code,sequenceText]=p.chargeId.split('__'),sequence=Number(sequenceText),line=calendar.lines.map(normalizeLine).find(l=>l.code===code);
    if(!line||!Number.isInteger(sequence)||sequence>1200||sequence<0)throw Error('Cuota inexistente.');
    const step={monthly:1,quarterly:3,annual:12}[line.cadence];
@@ -42,7 +45,7 @@ export function createFinanceWorker({verify=verifyFirebaseAdmin,fetcher=fetch,no
    return json(results[1].meta.changes?201:200,{id,receipt:'NX-'+id,company:calendar.name,contractId:p.contractId,chargeId:p.chargeId,amountCents:p.amountCents,date:p.date,reference:p.reference},origin);
   }
   if(path==='/api/finance/expense'&&request.method==='POST'){
-   const x=await body(request),id=operationId(x.operationId),amountCents=checkedCents(x.amountCents),date=isoDate(x.date),category=String(x.category||'').trim(),reference=String(x.reference||'').trim();
+   const x=await body(request),id=operationId(x.operationId),amountCents=checkedCents(x.amountCents),date=cashDate(x.date,now),category=String(x.category||'').trim(),reference=String(x.reference||'').trim();
    if(!amountCents||!category||category.length>80||!reference||reference.length>100)throw Error('Gasto no válido.');const results=await env.NEXORA_FINANCE_DB.batch([
     env.NEXORA_FINANCE_DB.prepare('INSERT INTO expenses(id,category,amount_cents,spent_on,reference,recorded_by) VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING').bind(id,category,amountCents,date,reference,admin.uid),
     env.NEXORA_FINANCE_DB.prepare('SELECT id,category,amount_cents AS amountCents,spent_on AS date,reference,recorded_by AS recordedBy FROM expenses WHERE id=?').bind(id)
@@ -56,7 +59,7 @@ export function createFinanceWorker({verify=verifyFirebaseAdmin,fetcher=fetch,no
    return json(200,{closures:rows.results.map(r=>({...r,...allocation(r.revenueCents,r.expensesCents,r.savingsBp,r.partnerABp)}))},origin);
   }
   if(path==='/api/finance/close'&&request.method==='POST'){
-   const x=await body(request),today=new Intl.DateTimeFormat('sv-SE',{timeZone:'America/Tegucigalpa',year:'numeric',month:'2-digit',day:'2-digit'}).format(now()),month=validateCloseMonth(x.month,today);
+   const x=await body(request),today=civilDay(now),month=validateCloseMonth(x.month,today);
    allocation(x.expectedRevenueCents,x.expectedExpensesCents,x.savingsBp,x.partnerABp);
    const from=month+'-01',to=addMonths(from,1);
    const rows=await env.NEXORA_FINANCE_DB.batch([

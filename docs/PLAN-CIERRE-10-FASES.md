@@ -55,3 +55,5 @@ Refuerzo fase 5: licencia suspendida y vencida puede extender vigencia sin quita
 
 ## Auditoría 1 — inicio
 Baseline 8771733: workflow 46138607294 completado, 103/103 pruebas comerciales y 4/4 de emulador, cero fallos, omitidos o cancelados. Hallazgo: reglas relacionadas verificaban estado anterior de documentos, no el estado final de una escritura atómica; se cambió a getAfter en acuerdos/calendarios y se refuerza vínculo revisión/cabecera. Reanudar/renovar licencia exige ahora coincidencia de identidad, versión y conceptos en ambas fuentes. Pruebas añadidas, pendientes de confirmación. Sin publicación real.
+
+Auditoría financiera: cuerpo JSON limitado a 4096 bytes mediante lectura por streaming y validación de tipo; se rechazan fechas futuras en movimientos de caja conforme al día civil hondureño. No limita fechas de vencimiento ni anticipos recibidos hoy. Pruebas HTTP de rechazo añadidas. Worker QA requiere nueva carga (incluye módulo proposal.js) tras validar el commit. No se activa acceso público.
