@@ -10,6 +10,7 @@ on:
       - 'commercial.css'
       - 'index.html'
       - 'tests/commercial.test.mjs'
+      - 'tests/commercial-billing.test.mjs'
       - 'docs/firestore-commercial-snippet.rules'
       - '.github/workflows/nexora-commercial-checks.yml'
 permissions:
@@ -23,5 +24,5 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - run: node --check commercial-core.js && node --check commercial.js && node --check project-status.js && node --check project-status-core.js
+      - run: node --check commercial-core.js && node --check commercial.js && node --check project-status.js && node --check project-status-core.js && node --check commercial-billing.js && node --check commercial-billing-core.js
       - run: node --test tests/*.test.mjs worker/nexora-licencias/tests/*.test.mjs

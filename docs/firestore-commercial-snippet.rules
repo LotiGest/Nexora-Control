@@ -100,3 +100,18 @@ match /nexoraProjectStatus/{id} {
   allow update,delete: if false;
  }
 }
+
+function ncCalendar(d,id) {
+ let c = get(/databases/$(database)/documents/nexoraCommercialContracts/$(id)).data;
+ return d.keys().hasOnly(['contractId','product','clientKey','name','reference','contractVersion','initialDue','firstDue','lines','createdBy','createdAt'])
+ && d.contractId == id && c.status == 'agreed' && d.product == c.product && d.clientKey == c.clientKey
+ && d.name == c.name && d.reference == c.reference && d.contractVersion == c.version && d.lines == c.lines
+ && d.initialDue is string && d.initialDue.matches('^20[0-9]{2}-[0-9]{2}-[0-9]{2}$')
+ && d.firstDue is string && d.firstDue.matches('^20[0-9]{2}-[0-9]{2}-[0-9]{2}$') && d.initialDue <= d.firstDue
+ && d.createdBy == request.auth.uid && d.createdAt == request.time;
+}
+match /nexoraBillingCalendars/{id} {
+ allow get,list: if nexoraLicenseAdmin();
+ allow create: if nexoraLicenseAdmin() && ncCalendar(request.resource.data,id);
+ allow update,delete: if false;
+}
