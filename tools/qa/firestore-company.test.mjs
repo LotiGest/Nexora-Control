@@ -47,3 +47,32 @@ test('existing installation reserves D1 atomically without permitting activation
  const otherData={...data(1),clientKey:otherKey};const pb=writeBatch(db);pb.set(otherProfile,otherData);pb.set(doc(otherProfile,'revisions',otherData.revisionKey),otherData);await assertSucceeds(pb.commit());
  const duplicate=writeBatch(db);duplicate.set(doc(db,'nexoraExistingInstallationRequests',otherId),{...row,contractId:otherId,clientKey:otherKey});duplicate.set(claim,{contractId:otherId,databaseId:dbId,createdBy:'qa-admin-a',createdAt:serverTimestamp()});await assertFails(duplicate.commit());
 });
+
+test('renewal proposals require authorized versioned writes, preserve calendar and cannot activate services',async()=>{
+ const k='renewal-qa',cid='LOTIGEST__'+k,db=admin(),head=doc(db,'nexoraCommercialContracts',cid),cal=doc(db,'nexoraBillingCalendars',cid);
+ const line={product:'LOTIGEST',code:'base',name:'Base',kind:'plan',catalogVersion:1,initialCents:1000,feeCents:500,cadence:'monthly',cycles:0};
+ const contract={product:'LOTIGEST',clientKey:k,name:'Empresa QA renovación',reference:'QA',status:'agreed',lines:[line],version:1,revisionKey:rev(101),updatedBy:'qa-admin-a',updatedAt:serverTimestamp()};
+ const b=writeBatch(db);b.set(head,contract);b.set(doc(head,'revisions',contract.revisionKey),contract);await assertSucceeds(b.commit());
+ const calendar={contractId:cid,product:'LOTIGEST',clientKey:k,name:contract.name,reference:'QA',contractVersion:1,initialDue:'2026-01-01',firstDue:'2026-02-01',lines:[line],createdBy:'qa-admin-a',createdAt:serverTimestamp()};
+ await assertSucceeds(setDoc(cal,calendar));
+ const effectiveOn=new Date(Date.now()+30*86400000).toISOString().slice(0,10);
+ const proposal={contractId:cid,product:'LOTIGEST',clientKey:k,contractVersion:1,calendarVersion:1,effectiveOn,effectiveAt:new Date(effectiveOn+'T00:00:00Z'),reason:'QA renovación',lines:[line],state:'pending-review',version:1,revisionKey:rev(102),updatedBy:'qa-admin-a',updatedAt:serverTimestamp()};
+ const save=(db,row)=>{const h=doc(db,'nexoraCommercialRenewals',cid),batch=writeBatch(db);batch.set(h,row);batch.set(doc(h,'revisions',row.revisionKey),row);return batch.commit();};
+ const h=doc(db,'nexoraCommercialRenewals',cid);
+ await assertFails(setDoc(h,proposal));
+ await assertFails(save(admin('qa-outsider'),{...proposal,updatedBy:'qa-outsider'}));
+ await assertFails(save(db,{...proposal,lines:[{...line,feeCents:1}]}));
+ await assertFails(save(db,{...proposal,contractVersion:2}));
+ await assertFails(save(db,{...proposal,effectiveOn:'2020-01-01',effectiveAt:new Date('2020-01-01T00:00:00Z')}));
+ await assertSucceeds(save(db,proposal));
+ await assertFails(save(db,{...proposal,version:2,revisionKey:rev(103),state:'active'}));
+ await assertFails(save(db,{...proposal,version:2,revisionKey:rev(103),reason:'overwrite'}));
+ await assertFails(deleteDoc(h));
+ await assertFails(deleteDoc(doc(h,'revisions',rev(102))));
+ await assertFails(getDoc(doc(admin('qa-outsider'),'nexoraCommercialRenewals',cid)));
+ const withdrawn={...proposal,state:'withdrawn',version:2,revisionKey:rev(103),updatedBy:'qa-admin-b',updatedAt:serverTimestamp()};
+ await assertSucceeds(save(admin('qa-admin-b'),withdrawn));
+ await assertSucceeds(save(db,{...proposal,version:3,revisionKey:rev(104),updatedAt:serverTimestamp()}));
+ assert.equal((await getDoc(h)).data().version,3);
+ assert.deepEqual((await getDoc(cal)).data().lines,[line]);
+});
