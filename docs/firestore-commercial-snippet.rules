@@ -157,21 +157,8 @@ function ncProfile(d,id) {
  && (d.product == 'LOTIGEST' || (d.residentials == null && d.sellers == null && d.estimatedClients == null))
  && (d.product == 'SIAC' || (d.doctors == null && d.analyzers == null))
  && (d.product == 'SINDEX' || (d.specialties == null && d.consultories == null))
- && ncOptionalString(d.adminName,120) && (d.adminUsername == '' || (d.adminUsername is string && d.adminUsername.matches('^[a-z0-9][a-z0-9._-]{2,49}$'))) && (d.product != 'LOTIGEST' || d.adminUsername == '' || d.adminUsername.matches('^[a-z0-9][a-z0-9_-]{2,39}
- && ncOptionalString(d.notes,500) && ncMeta(d);
-}
-match /nexoraCompanyProfiles/{id} {
- allow get,list: if nexoraLicenseAdmin();
- allow create: if nexoraLicenseAdmin() && ncProfile(request.resource.data,id) && request.resource.data.version == 1 && ncHasRevision('nexoraCompanyProfiles',id,request.resource.data);
- allow update: if nexoraLicenseAdmin() && ncProfile(request.resource.data,id) && request.resource.data.version == resource.data.version + 1 && ncHasRevision('nexoraCompanyProfiles',id,request.resource.data);
- allow delete: if false;
- match /revisions/{rev} {
-  allow get,list: if nexoraLicenseAdmin();
-  allow create: if nexoraLicenseAdmin() && ncProfile(request.resource.data,id) && ncRevisionMatches('nexoraCompanyProfiles',id,rev,request.resource.data);
-  allow update,delete: if false;
- }
-}
-)) && d.adminRole == 'admin'
+ && ncOptionalString(d.adminName,120) && (d.adminUsername == '' || (d.adminUsername is string && d.adminUsername.matches('^[a-z0-9][a-z0-9._-]{2,49}$')))
+ && (d.product != 'LOTIGEST' || d.adminUsername == '' || d.adminUsername.matches('^[a-z0-9][a-z0-9_-]{2,39}$')) && d.adminRole == 'admin'
  && ncOptionalString(d.notes,500) && ncMeta(d);
 }
 match /nexoraCompanyProfiles/{id} {
