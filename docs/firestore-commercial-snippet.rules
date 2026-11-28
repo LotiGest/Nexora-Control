@@ -234,3 +234,50 @@ match /nexoraCommercialRenewals/{id} {
   allow update,delete: if false;
  }
 }
+
+// Internal commercial entitlements. Not an operational license or access token.
+function ncEntitlementPeriod(d) {
+ return d.startsAt is timestamp && d.expiresAt is timestamp && d.graceAt is timestamp
+ && d.startsAt == timestamp.date(d.startsAt.year(),d.startsAt.month(),d.startsAt.day())
+ && d.expiresAt == timestamp.date(d.expiresAt.year(),d.expiresAt.month(),d.expiresAt.day())
+ && d.startsOn == ncDateText(d.startsAt) && d.expiresOn == ncDateText(d.expiresAt) && d.graceUntil == ncDateText(d.graceAt)
+ && d.startsOn.matches('^20[0-9]{2}-[0-9]{2}-[0-9]{2}$') && d.graceUntil.matches('^20[0-9]{2}-[0-9]{2}-[0-9]{2}$')
+ && d.expiresAt >= d.startsAt && d.graceDays is int && d.graceDays >= 0 && d.graceDays <= 30
+ && d.graceAt == d.expiresAt + duration.value(d.graceDays,'d');
+}
+function ncEntitlement(d,id) {
+ return d.keys().hasOnly(['contractId','product','clientKey','contractVersion','lines','startsOn','expiresOn','graceDays','graceUntil','startsAt','expiresAt','graceAt','state','action','reason','version','revisionKey','updatedBy','updatedAt'])
+ && ncProduct(d.product) && ncKey(d.clientKey) && id == d.product+'__'+d.clientKey && d.contractId == id
+ && d.contractVersion is int && d.contractVersion >= 1 && d.lines is list && d.lines.size() >= 1 && d.lines.size() <= 16
+ && d.state in ['issued','suspended'] && d.action in ['issue','renew','suspend','resume'] && ncLabel(d.reason,500) && ncEntitlementPeriod(d) && ncMeta(d);
+}
+function ncEntitlementAgreement(d,id) {
+ let c = get(/databases/$(database)/documents/nexoraCommercialContracts/$(id)).data;
+ let b = get(/databases/$(database)/documents/nexoraBillingCalendars/$(id)).data;
+ return c.status == 'agreed' && c.version == d.contractVersion && b.contractVersion == d.contractVersion && c.lines == d.lines && b.lines == d.lines && d.startsOn >= b.initialDue;
+}
+function ncEntitlementTransition(d,old,id) {
+ let changed = d.diff(old).affectedKeys();
+ let today = ncDateText(request.time - duration.value(6,'h'));
+ return (d.action == 'suspend' && old.state == 'issued' && d.state == 'suspended'
+ && changed.hasOnly(['state','action','reason','version','revisionKey','updatedBy','updatedAt']))
+ || (d.action == 'resume' && old.state == 'suspended' && d.state == 'issued' && today <= d.graceUntil && ncEntitlementAgreement(d,id)
+ && changed.hasOnly(['state','action','reason','version','revisionKey','updatedBy','updatedAt']))
+ || (d.action == 'renew' && old.state == 'issued' && d.state == 'issued' && d.expiresOn > old.expiresOn && d.expiresOn >= today && ncEntitlementAgreement(d,id)
+ && changed.hasOnly(['expiresOn','expiresAt','graceDays','graceUntil','graceAt','action','reason','version','revisionKey','updatedBy','updatedAt']));
+}
+match /nexoraCommercialLicenses/{id} {
+ allow get,list: if nexoraLicenseAdmin();
+ allow create: if nexoraLicenseAdmin() && ncEntitlement(request.resource.data,id) && request.resource.data.action == 'issue'
+ && request.resource.data.state == 'issued' && request.resource.data.version == 1
+ && request.resource.data.startsOn >= ncDateText(request.time - duration.value(6,'h')) && ncEntitlementAgreement(request.resource.data,id)
+ && ncHasRevision('nexoraCommercialLicenses',id,request.resource.data);
+ allow update: if nexoraLicenseAdmin() && ncEntitlement(request.resource.data,id) && request.resource.data.version == resource.data.version + 1
+ && ncEntitlementTransition(request.resource.data,resource.data,id) && ncHasRevision('nexoraCommercialLicenses',id,request.resource.data);
+ allow delete: if false;
+ match /revisions/{rev} {
+  allow get,list: if nexoraLicenseAdmin();
+  allow create: if nexoraLicenseAdmin() && ncRevisionMatches('nexoraCommercialLicenses',id,rev,request.resource.data);
+  allow update,delete: if false;
+ }
+}
