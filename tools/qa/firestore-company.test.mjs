@@ -55,7 +55,7 @@ test('renewal proposals require authorized versioned writes, preserve calendar a
  const b=writeBatch(db);b.set(head,contract);b.set(doc(head,'revisions',contract.revisionKey),contract);await assertSucceeds(b.commit());
  const calendar={contractId:cid,product:'LOTIGEST',clientKey:k,name:contract.name,reference:'QA',contractVersion:1,initialDue:'2026-01-01',firstDue:'2026-02-01',lines:[line],createdBy:'qa-admin-a',createdAt:serverTimestamp()};
  await assertSucceeds(setDoc(cal,calendar));
- const effectiveOn=new Date(Date.now()+30*86400000).toISOString().slice(0,10);
+ const effectiveOn=new Date(Math.max(Date.now()+30*86400000,Date.parse('2027-01-01'))).toISOString().slice(0,10);
  const proposal={contractId:cid,product:'LOTIGEST',clientKey:k,contractVersion:1,calendarVersion:1,effectiveOn,effectiveAt:new Date(effectiveOn+'T00:00:00Z'),reason:'QA renovación',lines:[line],state:'pending-review',version:1,revisionKey:rev(102),updatedBy:'qa-admin-a',updatedAt:serverTimestamp()};
  const save=(db,row)=>{const h=doc(db,'nexoraCommercialRenewals',cid),batch=writeBatch(db);batch.set(h,row);batch.set(doc(h,'revisions',row.revisionKey),row);return batch.commit();};
  const h=doc(db,'nexoraCommercialRenewals',cid);

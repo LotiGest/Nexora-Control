@@ -39,3 +39,5 @@ Continuación fase 3: el informe de movimientos y saldos usa un batch de lectura
 
 ## Fase 4 — gestión comercial
 Se conserva el catálogo, fichas empresariales y contratos versionados existentes. Se agrega comparación de descuentos únicamente frente a la misma versión de tarifa y periodicidad; aviso de calendario congelado y propuesta de renovación versionada, con retirada explícita, fecha futura, revisión de contrato y calendario y reglas de acceso. No renueva automáticamente ni cambia obligaciones anteriores: aplicación efectiva de nuevos términos requiere un modelo de calendario por vigencia y validación de licencias. Reglas solo en archivo de propuesta y emulador, no desplegadas a Firebase real.
+
+Directorio empresarial con búsqueda por nombre comercial/legal, RTN, contacto e ID, filtros por producto y preparación. La lectura de renovación no bloquea catálogo ni edición de contratos anteriores cuando sus permisos no están habilitados; las renovaciones sí exigen confirmación de todas sus fuentes. Nuevas pruebas de reglas para acceso, retiro, revisiones y protección del calendario. Pendiente CI y pruebas de navegador.

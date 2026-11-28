@@ -10,3 +10,9 @@ const fields=p==='LOTIGEST'?['residentials','sellers','estimatedClients']:p==='S
 return {product:p,clientKey,name:txt(r.name,100,true),legalName:txt(r.legalName,150),rtn,ownerName:txt(r.ownerName,120),address:txt(r.address,250),ownerPhone:phone(r.ownerPhone),companyPhone:phone(r.companyPhone),email:email(r.email),logoUrl,contactRole:txt(r.contactRole,100),facilityType:txt(r.facilityType,100),...counts,adminName:txt(r.adminName,120),adminUsername:username(r.adminUsername,p),adminRole:'admin',notes:txt(r.notes,500)};}
 export function companyId(r){return contractId(r.product,r.clientKey);}
 export function readiness(r){const c=normalizeCompany(r);const missing=[];for(const [k,label] of [['ownerName','propietario o representante'],['address','dirección empresarial'],['adminName','nombre de administrador'],['adminUsername','usuario de administrador']])if(!c[k])missing.push(label);if(!c.companyPhone&&!c.email)missing.push('contacto empresarial');return {ready:missing.length===0,missing};}
+
+export function matchesProfile(row,{search='',product='',prepared=''}={}){
+ const norm=v=>String(v??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
+ const query=norm(search),hay=norm([row.name,row.legalName,row.clientKey,row.rtn,row.ownerName,row.companyPhone,row.email].join(' '));
+ return (!product||row.product===product)&&(!query||query.split(/\s+/).every(q=>hay.includes(q)))&&(!prepared||(prepared==='ready')===readiness(row).ready);
+}
