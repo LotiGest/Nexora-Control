@@ -126,7 +126,7 @@ function ncTrial(d,id) {
  && d.contractId == id && c.status in ['draft','agreed'] && d.days is int && d.days >= 1 && d.days <= 365
  && d.startAt is timestamp && d.endAt is timestamp && d.startAt == timestamp.date(d.startAt.year(),d.startAt.month(),d.startAt.day())
  && d.endAt == d.startAt + duration.value(d.days,'d') && d.startsOn == ncDateText(d.startAt) && d.endsOn == ncDateText(d.endAt)
- && !exists(/databases/$(database)/documents/nexoraBillingCalendars/$(id)) && ncMeta(d);
+ && !existsAfter(/databases/$(database)/documents/nexoraBillingCalendars/$(id)) && ncMeta(d);
 }
 match /nexoraCommercialTrials/{id} {
  allow get,list: if nexoraLicenseAdmin();
@@ -141,5 +141,5 @@ match /nexoraCommercialTrials/{id} {
 }
 function ncAfterTrial(d,id) {
  let p = /databases/$(database)/documents/nexoraCommercialTrials/$(id);
- return !exists(p) || d.initialDue >= get(p).data.endsOn;
+ return !existsAfter(p) || d.initialDue >= getAfter(p).data.endsOn;
 }

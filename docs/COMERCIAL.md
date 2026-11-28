@@ -19,3 +19,6 @@ Inicio editable incluso retroactivo; duración de 1 a 365 días. Fin exclusivo =
 
 ## Clientes fundadores y aliados
 Clasificación opcional de cada contrato (estándar/fundador/aliado), motivo obligatorio para condiciones preferenciales, búsqueda y filtros por producto, relación y estado. No asigna descuentos ni precios automáticamente; los valores pactados se editan explícitamente en cada concepto y conservan su revisión. Los contratos antiguos sin clasificación se tratan como estándar. No se registran clientes reales durante desarrollo.
+
+## Conversión guiada de prueba a contrato
+Desde cada prueba, abrir el acuerdo exacto para confirmación manual o abrir su calendario si ya fue acordado. No se cambia estado ni se guarda un calendario al pulsar estos accesos. Un acuerdo inactivo no genera alertas de conversión. La protección de reglas usa el estado posterior de las transacciones para impedir que una edición de prueba y la creación de calendario pasen juntas. Validación del emulador pendiente.
