@@ -3,14 +3,16 @@ import {installationPlan} from './plan.js';
 import {activationReadiness} from './qa-d1.js';
 import {normalizeCompany,readiness} from '../../../commercial-company-core.js';
 import {commercialLicenseStatus} from '../../../commercial-entitlement-core.js';
+import {normalizeContract} from '../../../commercial-core.js';
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const sha=/^[0-9a-f]{40}$/;
 const cleanOrigin=s=>{const u=new URL(s);if(u.protocol!=='https:'||u.username||u.password||u.port||u.pathname!=='/'||u.search||u.hash||!u.hostname.endsWith('.workers.dev'))throw Error('Origen QA no permitido.');return u.origin;};
 export function prepareDelivery({company,installation,license,evidence,today,protectedIds,approvedOrigin}){
  const c=normalizeCompany(company);
+ let licensedLines=null;try{if(license&&Number.isSafeInteger(license.version)&&license.version>0&&Number.isSafeInteger(license.contractVersion)&&license.contractVersion>0)licensedLines=normalizeContract({product:c.product,clientKey:c.clientKey,name:c.name,reference:'QA entrega',status:'agreed',lines:license.lines}).lines;}catch{}
  if(c.product!=='LOTIGEST'||!c.clientKey.startsWith('qa-')||installation?.environment!=='qa'||installation?.fictitious!==true)throw Error('Entrega limitada a empresa ficticia QA.');
- const plan=installationPlan({product:c.product,slug:c.clientKey,name:c.name,fictitious:true,modules:(license?.lines||[]).filter(x=>x.kind==='module').map(x=>x.code)});
- if(installation.installationId!==c.clientKey||installation.databaseName!==plan.databaseName||!uuid.test(installation.databaseId)||!(protectedIds instanceof Set)||!protectedIds.size||protectedIds.has(installation.databaseId))throw Error('Identidad de base QA no confirmada.');
+ const plan=installationPlan({product:c.product,slug:c.clientKey,name:c.name,fictitious:true,modules:(licensedLines||[]).filter(x=>x.kind==='module').map(x=>x.code)});
+ if(installation.installationId!==c.clientKey||installation.databaseName!==plan.databaseName||!uuid.test(installation.databaseId)||!(protectedIds instanceof Set)||!protectedIds.size||[...protectedIds].some(id=>String(id).toLowerCase()===installation.databaseId.toLowerCase()))throw Error('Identidad de base QA no confirmada.');
  const origin=cleanOrigin(installation.url);
  if(origin!==cleanOrigin(approvedOrigin)||!sha.test(installation.releaseSha))throw Error('Origen o versión sin verificar.');
  const missing=[...readiness(c).missing,...activationReadiness({...evidence,databaseId:installation.databaseId}).missing];
@@ -19,7 +21,8 @@ export function prepareDelivery({company,installation,license,evidence,today,pro
  if(evidence?.identityVerified!==true||evidence?.brandingVerified!==true)missing.push('Identidad y personalización');
  if(evidence?.inviteOneTimeVerified!==true||evidence?.inviteExpiredDenied!==true||evidence?.inviteCrossTenantDenied!==true)missing.push('Invitación segura');
  if(evidence?.auditApproved!==true)missing.push('Auditoría 1 aprobada');
- if(!license||license.contractId!=='LOTIGEST__'+c.clientKey||license.product!=='LOTIGEST'||license.clientKey!==c.clientKey||commercialLicenseStatus(license,today)!=='active')missing.push('Licencia comercial vigente');
+ if(!licensedLines||!license||license.contractId!=='LOTIGEST__'+c.clientKey||license.product!=='LOTIGEST'||license.clientKey!==c.clientKey||commercialLicenseStatus(license,today)!=='active')missing.push('Licencia comercial vigente');
+ const codes=(licensedLines||[]).map(l=>l.code).sort();if(!licensedLines||evidence?.licenseVersion!==license?.version||evidence?.contractVersion!==license?.contractVersion||!Array.isArray(evidence?.enabledCodes)||JSON.stringify([...evidence.enabledCodes].sort())!==JSON.stringify(codes))missing.push('Versión de licencia y módulos efectivos verificados');
  return {environment:'qa',state:missing.length?'blocked':'ready-for-manual-review',missing:[...new Set(missing)],customer:{name:c.name,product:c.product,username:c.adminUsername},installation:{id:installation.installationId,url:origin,releaseSha:installation.releaseSha},modules:plan.modules,licenseExpiresOn:license?.expiresOn??null,steps:['Confirmar identidad y evidencia de instalación','Emitir invitación de un solo uso por canal seguro separado','El administrador elige su contraseña y accede con su cuenta','Comprobar identidad, permisos y módulos','Registrar aceptación sin guardar invitación ni contraseña'],activationPerformed:false,credentialsIssued:false};
 }
 export function deliveryText(packageData){
