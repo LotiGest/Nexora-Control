@@ -45,3 +45,6 @@ Cloudflare confirmó ambos uploads, bindings D1 exclusivos, subdominios habilita
 
 ## Reglas de directorio empresarial — corrección
 Se eliminó un bloque duplicado que truncaba la expresión regular del usuario de LotiGest. CI ejecuta una comprobación estructural y un emulador Firebase aislado con administradores ficticios, sin credenciales ni proyectos reales. No sustituye la prueba de integración con las reglas completas de producción.
+
+## Solicitud de vincular LotiGest existente
+Desde ficha empresarial, formulario de cuenta Cloudflare, UUID D1, URL y alias. Escritura atómica de solicitud y reserva exclusiva por UUID de D1, inmutables y pendientes de verificación; no se aceptan contraseñas ni estado activo. No registrar recursos reales antes de aprobar el despliegue. Es preparación del vínculo, no prueba de propiedad ni integración operativa. Falta API de verificación servidor-servidor, revisión/cancelación de reserva y aplicación de licencia con autorización explícita. No cambia la instalación ni fechas o usuarios existentes. Reglas y pruebas de colisión en emulador.

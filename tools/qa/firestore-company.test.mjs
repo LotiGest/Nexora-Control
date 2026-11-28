@@ -29,3 +29,21 @@ test('company creation, authorization, atomic revisions and conflicting edits',a
  await assertFails(deleteDoc(doc(ref,'revisions',rev(1))));
  assert.equal((await getDoc(ref)).data().version,2);
 });
+
+test('existing installation reserves D1 atomically without permitting activation',async()=>{
+ const db=admin();
+ const dbId='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+ const row={contractId:id,product:'LOTIGEST',clientKey:key,accountId:'a'.repeat(32),databaseId:dbId,url:'https://qa.example.invalid',alias:'https://alias.example.invalid',state:'pending-verification',source:'existing',createdBy:'qa-admin-a',createdAt:serverTimestamp()};
+ const head=doc(db,'nexoraExistingInstallationRequests',id),claim=doc(db,'nexoraInstallationD1Claims',dbId);
+ const reserve=(r)=>{const b=writeBatch(db);b.set(head,r);b.set(claim,{contractId:id,databaseId:dbId,createdBy:'qa-admin-a',createdAt:serverTimestamp()});return b.commit();};
+ await assertFails(setDoc(head,row));
+ await assertFails(setDoc(claim,{contractId:id,databaseId:dbId,createdBy:'qa-admin-a',createdAt:serverTimestamp()}));
+ await assertFails(reserve({...row,state:'active'}));
+ await assertSucceeds(reserve(row));
+ await assertFails(setDoc(head,{...row,state:'active'}));
+ await assertFails(deleteDoc(claim));
+ await assertFails(getDoc(doc(admin('qa-outsider'),'nexoraExistingInstallationRequests',id)));
+ const otherKey='empresa-otra',otherId='LOTIGEST__'+otherKey,otherProfile=doc(db,'nexoraCompanyProfiles',otherId);
+ const otherData={...data(1),clientKey:otherKey};const pb=writeBatch(db);pb.set(otherProfile,otherData);pb.set(doc(otherProfile,'revisions',otherData.revisionKey),otherData);await assertSucceeds(pb.commit());
+ const duplicate=writeBatch(db);duplicate.set(doc(db,'nexoraExistingInstallationRequests',otherId),{...row,contractId:otherId,clientKey:otherKey});duplicate.set(claim,{contractId:otherId,databaseId:dbId,createdBy:'qa-admin-a',createdAt:serverTimestamp()});await assertFails(duplicate.commit());
+});

@@ -172,3 +172,34 @@ match /nexoraCompanyProfiles/{id} {
   allow update,delete: if false;
  }
 }
+
+function ncExistingRequest(d,id) {
+ let claim = /databases/$(database)/documents/nexoraInstallationD1Claims/$(d.databaseId);
+ let profile = /databases/$(database)/documents/nexoraCompanyProfiles/$(id);
+ return d.keys().hasOnly(['contractId','product','clientKey','accountId','databaseId','url','alias','state','source','createdBy','createdAt'])
+ && d.contractId == id && d.product == 'LOTIGEST' && ncKey(d.clientKey) && id == 'LOTIGEST__'+d.clientKey && exists(profile)
+ && d.accountId is string && d.accountId.matches('^[a-f0-9]{32}$')
+ && d.databaseId is string && d.databaseId.matches('^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$')
+ && ncInstallationOrigin(d.url) && (d.alias == '' || (ncInstallationOrigin(d.alias) && d.alias != d.url))
+ && d.state == 'pending-verification' && d.source == 'existing' && d.createdBy == request.auth.uid && d.createdAt == request.time
+ && !exists(claim) && getAfter(claim).data.contractId == id && getAfter(claim).data.databaseId == d.databaseId;
+}
+function ncInstallationOrigin(s) {
+ return s is string && s.size() <= 270 && s.matches('^https://[a-z0-9]([a-z0-9.-]*[a-z0-9])?[.][a-z]{2,63}$');
+}
+match /nexoraExistingInstallationRequests/{id} {
+ allow get,list: if nexoraLicenseAdmin();
+ allow create: if nexoraLicenseAdmin() && ncExistingRequest(request.resource.data,id);
+ allow update,delete: if false;
+}
+function ncExistingClaim(d,id) {
+ let link = /databases/$(database)/documents/nexoraExistingInstallationRequests/$(d.contractId);
+ return d.keys().hasOnly(['contractId','databaseId','createdBy','createdAt'])
+ && d.databaseId == id && d.createdBy == request.auth.uid && d.createdAt == request.time
+ && !exists(link) && getAfter(link).data.databaseId == id && getAfter(link).data.contractId == d.contractId;
+}
+match /nexoraInstallationD1Claims/{id} {
+ allow get,list: if nexoraLicenseAdmin();
+ allow create: if nexoraLicenseAdmin() && ncExistingClaim(request.resource.data,id);
+ allow update,delete: if false;
+}
