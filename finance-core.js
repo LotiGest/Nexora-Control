@@ -1,5 +1,6 @@
 import {buildCalendar,isoDate} from './commercial-billing-core.js';
 import {checkedCents,product} from './commercial-core.js';
+import {summarizeYear,allocation} from './finance-profit.js';
 export function normalizePayment(p){
  if(!p||typeof p!=='object'||typeof p.contractId!=='string'||!/^(SIAC|SINDEX|LOTIGEST)__[a-z0-9][a-z0-9-]{2,59}$/.test(p.contractId))throw Error('Contrato no válido.');
  if(typeof p.chargeId!=='string'||!/^[a-z0-9][a-z0-9-]{2,59}__(?:0|[1-9]\d{0,3})$/.test(p.chargeId))throw Error('Cuota no válida.');
@@ -55,3 +56,19 @@ export function safeCsvCell(value){
 }
 
 export function chargeStatus(c,confirmed){if(!confirmed)return 'Proyección';if(c.balanceCents===0)return 'Pagada';if(c.overdue)return c.paidCents?'Vencida · parcial':'Vencida';return c.paidCents?'Abono parcial':'Pendiente';}
+
+// Validate complete financial snapshot BEFORE enabling any mutations or publishing balances.
+export function validateFinanceSnapshot(calendars,report,closures,year,today){
+ if(!/^20\d{2}$/.test(String(year))||!report||!Array.isArray(report.payments)||!Array.isArray(report.expenses)||!Array.isArray(closures))throw Error('Informe financiero incompleto.');
+ const ledger=reconcileLedger(calendars,report.charges,year+'-01-01',year+'-12-31',today);
+ const summary=summarizeYear(report.payments,report.expenses,year);
+ if(report.revenueCents!==summary.revenueCents||report.expensesCents!==summary.expensesCents||report.profitCents!==summary.revenueCents-summary.expensesCents)throw Error('Totales financieros inconsistentes.');
+ const months=new Map(summary.months.map(m=>[m.month,m])),seen=new Set();
+ for(const c of closures){
+  const m=months.get(c.month);if(!m||seen.has(c.month)||c.month>=today.slice(0,7)||m.revenueCents!==c.revenueCents||m.expensesCents!==c.expensesCents)throw Error('Cierre inconsistente con el libro financiero.');
+  const a=allocation(c.revenueCents,c.expensesCents,c.savingsBp,c.partnerABp);
+  if(Object.entries(a).some(([key,value])=>c[key]!==value))throw Error('Distribución de cierre inconsistente.');
+  seen.add(c.month);
+ }
+ return {ledger,summary};
+}
