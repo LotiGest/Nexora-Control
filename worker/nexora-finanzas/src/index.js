@@ -5,6 +5,8 @@ import {checkedCents,normalizeLine} from '../../../commercial-core.js';
 const ORIGIN='https://lotigest.github.io';
 const json=(status,value,origin)=>new Response(JSON.stringify(value),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff',...(origin===ORIGIN?{'access-control-allow-origin':ORIGIN,'access-control-allow-headers':'authorization, content-type','access-control-allow-methods':'GET, POST, OPTIONS','vary':'Origin'}:{})}});
 const bad=(s)=>{throw Error(s)};
+const operationId=x=>typeof x==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(x)?x:bad('Identificador de operación no válido.');
+const same=(row,fields)=>row&&Object.entries(fields).every(([key,value])=>row[key]===value);
 const identifier=x=>typeof x==='string'&&/^(SIAC|SINDEX|LOTIGEST)__[a-z0-9][a-z0-9-]{2,59}$/.test(x)?x:bad('Contrato no válido.');
 async function body(request){const raw=await request.text();if(raw.length>4096)throw Error('Solicitud demasiado grande.');return JSON.parse(raw);}
 async function calendarFor(id,token,fetcher){const url='https://firestore.googleapis.com/v1/projects/nexora-control-717c6/databases/(default)/documents/nexoraBillingCalendars/'+encodeURIComponent(id);
@@ -22,7 +24,7 @@ export function createFinanceWorker({verify=verifyFirebaseAdmin,fetcher=fetch}={
  let admin;try{admin=await verify(request.headers.get('authorization'),env);}catch(e){return json(e instanceof AuthFailure?e.status:503,{error:'authentication_failed'},origin);}
  try{
   if(path==='/api/finance/payment'&&request.method==='POST'){
-   const p=normalizePayment(await body(request)),calendar=await calendarFor(identifier(p.contractId),request.headers.get('authorization'),fetcher);
+   const raw=await body(request),id=operationId(raw.operationId),p=normalizePayment(raw),calendar=await calendarFor(identifier(p.contractId),request.headers.get('authorization'),fetcher);
    const [code,sequenceText]=p.chargeId.split('__'),sequence=Number(sequenceText),line=calendar.lines.map(normalizeLine).find(l=>l.code===code);
    if(!line||!Number.isInteger(sequence)||sequence>1200||sequence<0)throw Error('Cuota inexistente.');
    const step={monthly:1,quarterly:3,annual:12}[line.cadence];
@@ -30,17 +32,22 @@ export function createFinanceWorker({verify=verifyFirebaseAdmin,fetcher=fetch}={
    const due=sequence===0?isoDate(calendar.initialDue):isoDate(addMonths(calendar.firstDue,(sequence-1)*step));
    const charge={due,kind:sequence===0?'initial':'recurring',amountCents:sequence===0?line.initialCents:line.feeCents};
    if(!charge.amountCents)throw Error('Cuota sin importe.');
-   const id=crypto.randomUUID();await env.NEXORA_FINANCE_DB.batch([
-    env.NEXORA_FINANCE_DB.prepare('INSERT INTO charges(contract_id,charge_id,product,company,due_date,kind,amount_cents) VALUES(?,?,?,?,?,?,?) ON CONFLICT(contract_id,charge_id) DO NOTHING').bind(p.contractId,p.chargeId,calendar.product,calendar.name,charge.due,charge.kind,charge.amountCents),
-    env.NEXORA_FINANCE_DB.prepare('INSERT INTO payments(id,contract_id,charge_id,amount_cents,paid_on,reference,recorded_by) VALUES(?,?,?,?,?,?,?)').bind(id,p.contractId,p.chargeId,p.amountCents,p.date,p.reference,admin.uid)
+   const results=await env.NEXORA_FINANCE_DB.batch([
+    env.NEXORA_FINANCE_DB.prepare('INSERT INTO charges(contract_id,charge_id,product,company,due_date,kind,amount_cents) SELECT ?,?,?,?,?,?,? WHERE NOT EXISTS(SELECT 1 FROM payments WHERE id=?) ON CONFLICT(contract_id,charge_id) DO NOTHING').bind(p.contractId,p.chargeId,calendar.product,calendar.name,charge.due,charge.kind,charge.amountCents,id),
+    env.NEXORA_FINANCE_DB.prepare('INSERT INTO payments(id,contract_id,charge_id,amount_cents,paid_on,reference,recorded_by) VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING').bind(id,p.contractId,p.chargeId,p.amountCents,p.date,p.reference,admin.uid),
+    env.NEXORA_FINANCE_DB.prepare('SELECT id,contract_id AS contractId,charge_id AS chargeId,amount_cents AS amountCents,paid_on AS date,reference,recorded_by AS recordedBy FROM payments WHERE id=?').bind(id)
    ]);
-   return json(201,{id,receipt:'NX-'+id,contractId:p.contractId,chargeId:p.chargeId,amountCents:p.amountCents,date:p.date,reference:p.reference},origin);
+   if(!same(results[2].results[0],{...p,recordedBy:admin.uid}))return json(409,{error:'operation_conflict',message:'La operación ya existe con otros datos.'},origin);
+   return json(results[1].meta.changes?201:200,{id,receipt:'NX-'+id,contractId:p.contractId,chargeId:p.chargeId,amountCents:p.amountCents,date:p.date,reference:p.reference},origin);
   }
   if(path==='/api/finance/expense'&&request.method==='POST'){
-   const x=await body(request),amountCents=checkedCents(x.amountCents),date=isoDate(x.date),category=String(x.category||'').trim(),reference=String(x.reference||'').trim();
-   if(!amountCents||!category||category.length>80||!reference||reference.length>100)throw Error('Gasto no válido.');const id=crypto.randomUUID();
-   await env.NEXORA_FINANCE_DB.prepare('INSERT INTO expenses(id,category,amount_cents,spent_on,reference,recorded_by) VALUES(?,?,?,?,?,?)').bind(id,category,amountCents,date,reference,admin.uid).run();
-   return json(201,{id,receipt:'NXG-'+id,amountCents,date,category,reference},origin);
+   const x=await body(request),id=operationId(x.operationId),amountCents=checkedCents(x.amountCents),date=isoDate(x.date),category=String(x.category||'').trim(),reference=String(x.reference||'').trim();
+   if(!amountCents||!category||category.length>80||!reference||reference.length>100)throw Error('Gasto no válido.');const results=await env.NEXORA_FINANCE_DB.batch([
+    env.NEXORA_FINANCE_DB.prepare('INSERT INTO expenses(id,category,amount_cents,spent_on,reference,recorded_by) VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING').bind(id,category,amountCents,date,reference,admin.uid),
+    env.NEXORA_FINANCE_DB.prepare('SELECT id,category,amount_cents AS amountCents,spent_on AS date,reference,recorded_by AS recordedBy FROM expenses WHERE id=?').bind(id)
+   ]);
+   if(!same(results[1].results[0],{category,amountCents,date,reference,recordedBy:admin.uid}))return json(409,{error:'operation_conflict',message:'La operación ya existe con otros datos.'},origin);
+   return json(results[0].meta.changes?201:200,{id,receipt:'NXG-'+id,amountCents,date,category,reference},origin);
   }
   if(path==='/api/finance/report'&&request.method==='GET'){
    const from=isoDate(url.searchParams.get('from')),to=isoDate(url.searchParams.get('to'));if(to<from||Number(to.slice(0,4))-Number(from.slice(0,4))>1)throw Error('Rango máximo: dos años.');
