@@ -16,3 +16,6 @@ Importación explícita desde Configuración de precios; crea únicamente códig
 
 ## Pruebas comerciales
 Inicio editable incluso retroactivo; duración de 1 a 365 días. Fin exclusivo = inicio + días. Avisos dentro de la app a 7 días o menos y cuando termine, sin bloquear aplicaciones ni cobrar automáticamente. Si el cliente acepta, registrar acuerdo y calendario; pago inicial al contratar y primera mensualidad por defecto el mismo día del siguiente mes (ajustado al último día si hace falta). No crear calendarios dentro de prueba gratuita. Las pruebas no envían email: falta servicio de correo programado y verificación de destinatarios. Las reglas Firebase y la UI deben validarse en emulador/QA antes de publicación. No registrar fechas ni importes de clientes reales de memoria.
+
+## Clientes fundadores y aliados
+Clasificación opcional de cada contrato (estándar/fundador/aliado), motivo obligatorio para condiciones preferenciales, búsqueda y filtros por producto, relación y estado. No asigna descuentos ni precios automáticamente; los valores pactados se editan explícitamente en cada concepto y conservan su revisión. Los contratos antiguos sin clasificación se tratan como estándar. No se registran clientes reales durante desarrollo.

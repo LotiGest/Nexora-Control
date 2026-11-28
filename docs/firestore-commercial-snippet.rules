@@ -27,9 +27,10 @@ function ncLine(d,p,kind) {
 }
 function ncAddon(lines,p,i) {return lines.size() <= i || ncLine(lines[i],p,'module');}
 function ncContract(d,id) {
- return d.keys().hasOnly(['product','clientKey','name','reference','status','lines','version','revisionKey','updatedBy','updatedAt'])
+ return d.keys().hasOnly(['product','clientKey','name','reference','status','relationship','agreementNote','lines','version','revisionKey','updatedBy','updatedAt'])
  && ncProduct(d.product) && ncKey(d.clientKey) && id == d.product + '__' + d.clientKey
  && ncLabel(d.name,100) && ncLabel(d.reference,140) && d.status in ['draft','agreed','inactive']
+ && d.get('relationship','standard') in ['standard','founder','partner'] && d.get('agreementNote','') is string && d.get('agreementNote','').size() <= 500 && (d.get('relationship','standard') == 'standard' || d.get('agreementNote','').size() > 0)
  && d.lines is list && d.lines.size() >= 1 && d.lines.size() <= 16 && ncLine(d.lines[0],d.product,'plan')
  && ncAddon(d.lines,d.product,1)
  && ncAddon(d.lines,d.product,2)
