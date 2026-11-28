@@ -112,6 +112,33 @@ function ncCalendar(d,id) {
 }
 match /nexoraBillingCalendars/{id} {
  allow get,list: if nexoraLicenseAdmin();
- allow create: if nexoraLicenseAdmin() && ncCalendar(request.resource.data,id);
+ allow create: if nexoraLicenseAdmin() && ncCalendar(request.resource.data,id) && ncAfterTrial(request.resource.data,id);
  allow update,delete: if false;
+}
+
+// Trial timestamps use UTC midnight as a civil-date encoding, not a user's local clock.
+function ncPad(n) {return (n < 10 ? '0' : '') + string(n);}
+function ncDateText(t) {return string(t.year()) + '-' + ncPad(t.month()) + '-' + ncPad(t.day());}
+function ncTrial(d,id) {
+ let c = get(/databases/$(database)/documents/nexoraCommercialContracts/$(id)).data;
+ return d.keys().hasOnly(['contractId','startsOn','days','endsOn','startAt','endAt','version','revisionKey','updatedBy','updatedAt'])
+ && d.contractId == id && c.status in ['draft','agreed'] && d.days is int && d.days >= 1 && d.days <= 365
+ && d.startAt is timestamp && d.endAt is timestamp && d.startAt == timestamp.date(d.startAt.year(),d.startAt.month(),d.startAt.day())
+ && d.endAt == d.startAt + duration.value(d.days,'d') && d.startsOn == ncDateText(d.startAt) && d.endsOn == ncDateText(d.endAt)
+ && !exists(/databases/$(database)/documents/nexoraBillingCalendars/$(id)) && ncMeta(d);
+}
+match /nexoraCommercialTrials/{id} {
+ allow get,list: if nexoraLicenseAdmin();
+ allow create: if nexoraLicenseAdmin() && ncTrial(request.resource.data,id) && request.resource.data.version == 1 && ncHasRevision('nexoraCommercialTrials',id,request.resource.data);
+ allow update: if nexoraLicenseAdmin() && ncTrial(request.resource.data,id) && request.resource.data.version == resource.data.version + 1 && ncHasRevision('nexoraCommercialTrials',id,request.resource.data);
+ allow delete: if false;
+ match /revisions/{rev} {
+  allow get,list: if nexoraLicenseAdmin();
+  allow create: if nexoraLicenseAdmin() && ncTrial(request.resource.data,id) && ncRevisionMatches('nexoraCommercialTrials',id,rev,request.resource.data);
+  allow update,delete: if false;
+ }
+}
+function ncAfterTrial(d,id) {
+ let p = /databases/$(database)/documents/nexoraCommercialTrials/$(id);
+ return !exists(p) || d.initialDue >= get(p).data.endsOn;
 }
