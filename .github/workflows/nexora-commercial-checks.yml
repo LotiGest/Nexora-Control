@@ -5,6 +5,8 @@ on:
   pull_request:
     paths:
       - 'commercial*.js'
+      - 'finance*.js'
+      - 'tests/finance.test.mjs'
       - 'project-status*.js'
       - 'tests/project-status.test.mjs'
       - 'commercial.css'
@@ -24,5 +26,5 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - run: node --check commercial-core.js && node --check commercial.js && node --check project-status.js && node --check project-status-core.js && node --check commercial-billing.js && node --check commercial-billing-core.js
+      - run: node --check commercial-core.js && node --check commercial.js && node --check project-status.js && node --check project-status-core.js && node --check commercial-billing.js && node --check commercial-billing-core.js && node --check finance-core.js
       - run: node --test tests/*.test.mjs worker/nexora-licencias/tests/*.test.mjs
