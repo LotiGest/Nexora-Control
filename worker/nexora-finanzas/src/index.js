@@ -38,7 +38,7 @@ export function createFinanceWorker({verify=verifyFirebaseAdmin,fetcher=fetch}={
     env.NEXORA_FINANCE_DB.prepare('SELECT id,contract_id AS contractId,charge_id AS chargeId,amount_cents AS amountCents,paid_on AS date,reference,recorded_by AS recordedBy FROM payments WHERE id=?').bind(id)
    ]);
    if(!same(results[2].results[0],{...p,recordedBy:admin.uid}))return json(409,{error:'operation_conflict',message:'La operación ya existe con otros datos.'},origin);
-   return json(results[1].meta.changes?201:200,{id,receipt:'NX-'+id,contractId:p.contractId,chargeId:p.chargeId,amountCents:p.amountCents,date:p.date,reference:p.reference},origin);
+   return json(results[1].meta.changes?201:200,{id,receipt:'NX-'+id,company:calendar.name,contractId:p.contractId,chargeId:p.chargeId,amountCents:p.amountCents,date:p.date,reference:p.reference},origin);
   }
   if(path==='/api/finance/expense'&&request.method==='POST'){
    const x=await body(request),id=operationId(x.operationId),amountCents=checkedCents(x.amountCents),date=isoDate(x.date),category=String(x.category||'').trim(),reference=String(x.reference||'').trim();
@@ -52,7 +52,7 @@ export function createFinanceWorker({verify=verifyFirebaseAdmin,fetcher=fetch}={
   if(path==='/api/finance/report'&&request.method==='GET'){
    const from=isoDate(url.searchParams.get('from')),to=isoDate(url.searchParams.get('to'));if(to<from||Number(to.slice(0,4))-Number(from.slice(0,4))>1)throw Error('Rango máximo: dos años.');
    const [payments,expenses,charges]=await Promise.all([
-    env.NEXORA_FINANCE_DB.prepare('SELECT id,contract_id AS contractId,charge_id AS chargeId,amount_cents AS amountCents,paid_on AS date,reference,recorded_by AS recordedBy FROM payments WHERE paid_on BETWEEN ? AND ? ORDER BY paid_on,id LIMIT 10000').bind(from,to).all(),
+    env.NEXORA_FINANCE_DB.prepare('SELECT p.id,p.contract_id AS contractId,p.charge_id AS chargeId,p.amount_cents AS amountCents,p.paid_on AS date,p.reference,p.recorded_by AS recordedBy,c.company FROM payments p JOIN charges c ON c.contract_id=p.contract_id AND c.charge_id=p.charge_id WHERE p.paid_on BETWEEN ? AND ? ORDER BY p.paid_on,p.id LIMIT 10000').bind(from,to).all(),
     env.NEXORA_FINANCE_DB.prepare('SELECT id,category,amount_cents AS amountCents,spent_on AS date,reference,recorded_by AS recordedBy FROM expenses WHERE spent_on BETWEEN ? AND ? ORDER BY spent_on,id LIMIT 10000').bind(from,to).all(),
     env.NEXORA_FINANCE_DB.prepare('SELECT contract_id AS contractId,charge_id AS chargeId,product,company,due_date AS due,kind,amount_cents AS amountCents,paid_cents AS paidCents FROM charges WHERE due_date BETWEEN ? AND ? ORDER BY due_date LIMIT 10000').bind(from,to).all()
    ]);

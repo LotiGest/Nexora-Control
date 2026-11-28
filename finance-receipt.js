@@ -20,7 +20,7 @@ function literal(value){
   return String.fromCharCode(n);
  }).join('')+')';
 }
-function wrap(value,width=65){const out=[];let s=String(value).replace(/\s+/g,' ').trim();while(s.length>width){let i=s.lastIndexOf(' ',width);if(i<1)i=width;out.push(s.slice(0,i));s=s.slice(i).trimStart();}out.push(s);return out;}
+function wrap(value,width=42){const out=[];let s=String(value).replace(/\s+/g,' ').trim();while(s.length>width){let i=s.lastIndexOf(' ',width);if(i<1)i=width;out.push(s.slice(0,i));s=s.slice(i).trimStart();}out.push(s);return out;}
 export function buildReceiptPdf(row){
  const data=receiptDetails(row),lines=[];
  const text=(x,y,size,value,bold=false)=>lines.push('BT /'+(bold?'F2':'F1')+' '+size+' Tf 1 0 0 1 '+x+' '+y+' Tm '+literal(value)+' Tj ET');

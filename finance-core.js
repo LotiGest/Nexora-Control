@@ -43,3 +43,13 @@ export function reconcileLedger(calendars,ledger,from,to,asOf){
  }
  return report;
 }
+
+export function collectableCharges(calendars,ledger,contractId,year,asOf){
+ if(!/^20\d{2}$/.test(String(year)))throw Error('Año no válido.');
+ return reconcileLedger(calendars,ledger,year+'-01-01',year+'-12-31',asOf).charges.filter(c=>c.contractId===contractId&&c.balanceCents>0);
+}
+export function safeCsvCell(value){
+ let text=String(value??'');
+ if(/^[\s\uFEFF]*[=+\-@]/.test(text)||/^[\t\r\n]/.test(text))text="'"+text;
+ return '"'+text.replaceAll('"','""')+'"';
+}
