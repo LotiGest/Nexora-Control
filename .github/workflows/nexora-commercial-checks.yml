@@ -6,6 +6,8 @@ on:
     paths:
       - 'commercial*.js'
       - 'finance*.js'
+      - 'worker/nexora-finanzas/**'
+      - 'worker/nexora-provision/**'
       - 'tests/finance.test.mjs'
       - 'project-status*.js'
       - 'tests/project-status.test.mjs'
@@ -26,5 +28,5 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - run: node --check commercial-core.js && node --check commercial.js && node --check project-status.js && node --check project-status-core.js && node --check commercial-billing.js && node --check commercial-billing-core.js && node --check finance-core.js
-      - run: node --test tests/*.test.mjs worker/nexora-licencias/tests/*.test.mjs
+      - run: node --check commercial-core.js && node --check commercial.js && node --check project-status.js && node --check project-status-core.js && node --check commercial-billing.js && node --check commercial-billing-core.js && node --check finance-core.js && node --check finance-ui.js && node --check worker/nexora-finanzas/src/index.js && node --check worker/nexora-provision/src/plan.js
+      - run: node --test tests/*.test.mjs worker/nexora-licencias/tests/*.test.mjs worker/nexora-finanzas/tests/*.test.mjs worker/nexora-provision/tests/*.test.mjs

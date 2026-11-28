@@ -1,0 +1,11 @@
+{
+  "name": "nexora-finanzas-qa",
+  "main": "src/index.js",
+  "compatibility_date": "2026-11-01",
+  "d1_databases": [{
+    "binding": "NEXORA_FINANCE_DB",
+    "database_name": "nexora-finanzas-qa-isolada",
+    "database_id": "REPLACE_WITH_QA_D1_ID",
+    "migrations_dir": "migrations"
+  }]
+}
