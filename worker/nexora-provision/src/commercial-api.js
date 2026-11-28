@@ -43,8 +43,10 @@ export async function prepareCommercialPlan(id,records,today){
  if(license.contractId!==id||license.clientKey!==c.clientKey||license.product!==c.product||license.contractVersion!==agreement.version||commercialLicenseStatus(license,today)!=='active'||JSON.stringify(license.lines.map(normalizeLine))!==JSON.stringify(expected.lines))throw Error('Licencia comercial vigente y términos exactos requeridos.');
  const input={product:c.product,slug:c.clientKey,name:c.name,fictitious:true,modules:expected.lines.filter(l=>l.kind==='module').map(l=>l.code)};
  const plan=installationPlan(input);
+ if(input.modules.length||!['promocion','profesional','empresarial','corporativo'].includes(expected.lines[0].code))throw Error('Plan aún no admitido por el adaptador operativo QA.');
+ const entitlement={installationId:c.clientKey,contractId:id,licenseVersion:license.version,contractVersion:agreement.version,planCode:expected.lines[0].code,state:license.state,startsOn:license.startsOn,expiresOn:license.expiresOn,graceUntil:license.graceUntil};
  const revision=await digest(JSON.stringify({company:c,companyVersion:raw.version,contract,contractVersion:agreement.version,calendar:expected,licenseVersion:license.version,startsOn:license.startsOn,expiresOn:license.expiresOn,graceUntil:license.graceUntil}));
- return {input,plan,revision,licenseVersion:license.version,contractVersion:agreement.version};
+ return {input,plan,revision,entitlement,licenseVersion:license.version,contractVersion:agreement.version};
 }
 // Infrastructure adapter is a trusted server dependency, never constructed from request data.
 // Without a configured adapter the endpoint is intentionally preview-only.
@@ -62,8 +64,8 @@ export function createProvisionWorker({verify=verifyFirebaseAdmin,fetcher=fetch,
   let infra;try{if(env.NEXORA_QA_PROVISION!=='enabled')throw Error();infra=infrastructure??createCloudflareQaInfrastructure(env);}catch{return json(503,{error:'provision_adapter_not_configured'});}
   let ledger,claim;try{ledger=journal??provisionJournal(env.NEXORA_PROVISION_JOURNAL);claim=await ledger.claim({contractId:raw.contractId,revision:data.revision,uid:admin.uid});}catch{return json(503,{error:'provision_journal_unavailable'});}
   if(!claim.claimed){const row=claim.row;if(row.revision!==data.revision)return json(409,{error:'existing_operation_revision_changed'});if(row.state==='schema-ready')return json(200,{state:row.state,databaseId:row.databaseId,databaseName:row.databaseName,activationPerformed:false,credentialsIssued:false});return json(409,{error:'provision_review_required',state:row.state,activationPerformed:false});}
-  try{const result=await prepare(data.input,infra);await ledger.finish({contractId:raw.contractId,revision:data.revision,result});return json(201,{state:result.state,databaseId:result.databaseId,databaseName:result.databaseName,activationPerformed:false,credentialsIssued:false});}
-  catch(e){try{await ledger.fail({contractId:raw.contractId,revision:data.revision,databaseId:e?.databaseId});}catch{}return json(409,{error:'provision_review_required',activationPerformed:false});}
+  let createdId;try{const result=await prepare(data.input,infra);createdId=result.databaseId;await infra.adapter.initialize(result.databaseId,data.entitlement);await ledger.finish({contractId:raw.contractId,revision:data.revision,result});return json(201,{state:result.state,databaseId:result.databaseId,databaseName:result.databaseName,activationPerformed:false,credentialsIssued:false});}
+  catch(e){try{await ledger.fail({contractId:raw.contractId,revision:data.revision,databaseId:e?.databaseId??createdId});}catch{}return json(409,{error:'provision_review_required',activationPerformed:false});}
  }};
 }
 export default createProvisionWorker();
