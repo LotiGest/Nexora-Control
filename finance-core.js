@@ -16,7 +16,7 @@ export function reconcile(calendars,payments,from,to,asOf){
  for(const c of charges){c.balanceCents=Math.max(0,c.amountCents-c.paidCents);c.overdue=c.due<asOf&&c.balanceCents>0;scheduledCents+=c.amountCents;paidCents+=c.paidCents;pendingCents+=c.balanceCents;if(c.overdue)overdueCents+=c.balanceCents;byProduct[c.product]=(byProduct[c.product]||0)+c.paidCents;}
  return {charges,receipts,scheduledCents,paidCents,pendingCents,overdueCents,byProduct};
 }
-export function csvReport(charges){const cell=v=>'"'+String(v??'').replaceAll('"','""')+'"';return '\uFEFF'+[['Empresa','Producto','Contrato','Cuota','Vence','Importe HNL','Abonado HNL','Saldo HNL'],...charges.map(c=>[c.company,c.product,c.contractId,c.id,c.due,(c.amountCents/100).toFixed(2),(c.paidCents/100).toFixed(2),(c.balanceCents/100).toFixed(2)])].map(row=>row.map(cell).join(',')).join('\r\n');}
+export function csvReport(charges){const cell=safeCsvCell;return '\uFEFF'+[['Empresa','Producto','Contrato','Cuota','Vence','Importe HNL','Abonado HNL','Saldo HNL'],...charges.map(c=>[c.company,c.product,c.contractId,c.id,c.due,(c.amountCents/100).toFixed(2),(c.paidCents/100).toFixed(2),(c.balanceCents/100).toFixed(2)])].map(row=>row.map(cell).join(',')).join('\r\n');}
 
 /** Match immutable calendar obligations against confirmed D1 charge balances.
  * Payment dates may fall outside the due-date period, so the ledger's cumulative
@@ -53,3 +53,5 @@ export function safeCsvCell(value){
  if(/^[\s\uFEFF]*[=+\-@]/.test(text)||/^[\t\r\n]/.test(text))text="'"+text;
  return '"'+text.replaceAll('"','""')+'"';
 }
+
+export function chargeStatus(c,confirmed){if(!confirmed)return 'Proyección';if(c.balanceCents===0)return 'Pagada';if(c.overdue)return c.paidCents?'Vencida · parcial':'Vencida';return c.paidCents?'Abono parcial':'Pendiente';}
