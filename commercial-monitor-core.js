@@ -8,13 +8,13 @@ export function commercialAlerts({contracts,licenses,trials,calendars,renewals,t
  for(const c of contracts){
   const id=c.id;if(c.status==='inactive')continue;
   const add=(kind,date,level)=>result.push({id,company:c.name,product:c.product,kind,date,level});
-  const license=licenses.get(id);
+  try{const license=licenses.get(id);
   if(license){const state=commercialLicenseStatus(license,today),days=remaining(license.expiresOn,today);
    if(state==='expired'||state==='grace'||state==='suspended')add('license-'+state,license.expiresOn,state==='expired'||state==='suspended'?'critical':'warning');
    else if(state==='active'&&days<=7)add('license-expiring',license.expiresOn,'warning');
-  }else if(c.status==='agreed'&&calendars.has(id))add('license-missing',null,'warning');
-  const trial=trials.get(id);if(trial&&!calendars.has(id)){const state=trialStatus(trial,today).state;if(state==='expired'||state==='expiring')add('trial-'+state,trial.endsOn,'warning');}
-  const renewal=renewals.get(id);if(renewal?.state==='pending-review'&&remaining(renewal.effectiveOn,today)<=7)add(renewal.contractVersion!==c.version?'renewal-stale':'renewal-review',renewal.effectiveOn,'warning');
+  }else if(c.status==='agreed'&&calendars.has(id))add('license-missing',null,'warning');}catch{add('license-invalid',null,'critical');}
+  try{const trial=trials.get(id);if(trial&&!calendars.has(id)){const state=trialStatus(trial,today).state;if(state==='expired'||state==='expiring')add('trial-'+state,trial.endsOn,'warning');}}catch{add('trial-invalid',null,'critical');}
+  try{const renewal=renewals.get(id);if(renewal?.state==='pending-review'){const days=remaining(renewal.effectiveOn,today);if(renewal.contractVersion!==c.version)add('renewal-stale',renewal.effectiveOn,'warning');else if(days<=7)add('renewal-review',renewal.effectiveOn,'warning');}}catch{add('renewal-invalid',null,'critical');}
  }
  return result.sort((a,b)=>(a.level==='critical'?0:1)-(b.level==='critical'?0:1)||(a.date||'9999').localeCompare(b.date||'9999')||a.id.localeCompare(b.id));
 }
