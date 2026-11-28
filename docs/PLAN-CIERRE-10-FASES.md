@@ -77,3 +77,5 @@ Evidencia Cloudflare: actualizado únicamente el Worker financiero privado QA de
 
 ## Correcciones post fase 10 — oportunidad 1
 El panel financiero valida conciliación de obligaciones, totales de caja y asignaciones de cierres antes de publicar saldos o habilitar cualquier escritura. Si hay discrepancias, invalida todo el informe. Cambios en el año o calendario invalidan la vista previa y evitan saldos obsoletos. Nueva regresión unitaria. No se altera la D1 QA ni producción.
+
+Oportunidad 1: reglas Firestore comerciales ahora verifican unicidad de códigos y combinaciones SIAC (Integral, Lab Básico/Plus y Lab Connect gratuito con Plus), además de validación cliente existente. Prueba de rechazo de cinco combinaciones y aceptación de contrato máximo de 16 conceptos. No se publican reglas reales.

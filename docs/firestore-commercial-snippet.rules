@@ -23,9 +23,17 @@ function ncRate(d,id) {
 function ncLine(d,p,kind) {
  return d is map && d.keys().hasOnly(['product','code','name','kind','catalogVersion','initialCents','feeCents','cadence','cycles'])
  && d.product == p && ncKey(d.code) && ncLabel(d.name,100) && d.kind == kind
- && d.catalogVersion is int && d.catalogVersion >= 1 && ncAmount(d);
+ && d.catalogVersion is int && d.catalogVersion >= 1 && ncAmount(d)
+ && (p != 'SIAC' || d.code != 'lab-connect' || (d.initialCents == 0 && d.feeCents == 0));
 }
 function ncAddon(lines,p,i) {return lines.size() <= i || ncLine(lines[i],p,'module');}
+function ncCodeAt(lines,i) {return lines.size() > i ? lines[i].code : '';}
+function ncUniqueCompatible(lines,p) {
+ let codes = [ncCodeAt(lines,0),ncCodeAt(lines,1),ncCodeAt(lines,2),ncCodeAt(lines,3),ncCodeAt(lines,4),ncCodeAt(lines,5),ncCodeAt(lines,6),ncCodeAt(lines,7),ncCodeAt(lines,8),ncCodeAt(lines,9),ncCodeAt(lines,10),ncCodeAt(lines,11),ncCodeAt(lines,12),ncCodeAt(lines,13),ncCodeAt(lines,14),ncCodeAt(lines,15)].toSet();
+ return codes.size() == lines.size() + (lines.size() < 16 ? 1 : 0)
+ && (p != 'SIAC' || ((!codes.hasAny(['integral']) || !codes.hasAny(['lab-basic','lab-plus','lab-connect','imagenologia','hospitalizacion']))
+ && !(codes.hasAll(['lab-basic','lab-plus'])) && (!codes.hasAny(['lab-connect']) || codes.hasAny(['lab-plus']))));
+}
 function ncContract(d,id) {
  return d.keys().hasOnly(['product','clientKey','name','reference','status','relationship','agreementNote','lines','version','revisionKey','updatedBy','updatedAt'])
  && ncProduct(d.product) && ncKey(d.clientKey) && id == d.product + '__' + d.clientKey
@@ -47,7 +55,7 @@ function ncContract(d,id) {
  && ncAddon(d.lines,d.product,13)
  && ncAddon(d.lines,d.product,14)
  && ncAddon(d.lines,d.product,15)
- && ncMeta(d);
+ && ncUniqueCompatible(d.lines,d.product) && ncMeta(d);
 }
 function ncHasRevision(col,id,d) {
  let p = /databases/$(database)/documents/$(col)/$(id)/revisions/$(d.revisionKey);

@@ -107,3 +107,14 @@ test('atomic contract changes cannot issue a license against superseded terms',a
  const invalid=writeBatch(db);invalid.set(head,newer);invalid.set(doc(head,'revisions',newer.revisionKey),newer);invalid.set(license,row);invalid.set(doc(license,'revisions',row.revisionKey),row);await assertFails(invalid.commit());
  assert.equal((await getDoc(head)).data().version,1);assert.equal((await getDoc(license)).exists(),false);
 });
+
+test('reglas comerciales rechazan conceptos duplicados y módulos SIAC incompatibles',async()=>{
+ const db=admin(),k='qa-modules',cid='SIAC__'+k,head=doc(db,'nexoraCommercialContracts',cid);
+ const line={product:'SIAC',code:'base',name:'Base',kind:'plan',catalogVersion:1,initialCents:1000,feeCents:500,cadence:'monthly',cycles:0};
+ const addon=code=>({...line,code,kind:'module'});
+ const contract={product:'SIAC',clientKey:k,name:'QA módulos',reference:'QA',status:'agreed',version:1,revisionKey:rev(401),updatedBy:'qa-admin-a',updatedAt:serverTimestamp()};
+ const save=lines=>{const b=writeBatch(db),data={...contract,lines};b.set(head,data);b.set(doc(head,'revisions',data.revisionKey),data);return b.commit();};
+ for(const lines of [[line,addon('base')],[line,addon('lab-basic'),addon('lab-plus')],[{...line,code:'integral'},addon('lab-plus')],[line,{...addon('lab-connect'),initialCents:0,feeCents:0}],[line,addon('lab-plus'),addon('lab-connect')]])await assertFails(save(lines));
+ await assertSucceeds(save([line,...Array.from({length:15},(_,i)=>addon('mod-'+i))]));
+ assert.equal((await getDoc(head)).data().lines.length,16);
+});
