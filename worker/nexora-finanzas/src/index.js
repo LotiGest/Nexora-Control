@@ -57,13 +57,13 @@ export function createFinanceWorker({verify=verifyFirebaseAdmin,fetcher=fetch}={
   }
   if(path==='/api/finance/close'&&request.method==='POST'){
    const x=await body(request),today=new Intl.DateTimeFormat('sv-SE',{timeZone:'America/Tegucigalpa',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date()),month=validateCloseMonth(x.month,today);
-   allocation(0,0,x.savingsBp,x.partnerABp);
+   allocation(x.expectedRevenueCents,x.expectedExpensesCents,x.savingsBp,x.partnerABp);
    const from=month+'-01',to=addMonths(from,1);
    const rows=await env.NEXORA_FINANCE_DB.batch([
-    env.NEXORA_FINANCE_DB.prepare('INSERT INTO finance_closures(month,revenue_cents,expenses_cents,savings_bp,partner_a_bp,closed_by) SELECT ?,COALESCE((SELECT SUM(amount_cents) FROM payments WHERE paid_on>=? AND paid_on<?),0),COALESCE((SELECT SUM(amount_cents) FROM expenses WHERE spent_on>=? AND spent_on<?),0),?,?,? ON CONFLICT(month) DO NOTHING').bind(month,from,to,from,to,x.savingsBp,x.partnerABp,admin.uid),
+    env.NEXORA_FINANCE_DB.prepare('INSERT INTO finance_closures(month,revenue_cents,expenses_cents,savings_bp,partner_a_bp,closed_by) SELECT ?,r,e,?,?,? FROM (SELECT COALESCE((SELECT SUM(amount_cents) FROM payments WHERE paid_on>=? AND paid_on<?),0) AS r,COALESCE((SELECT SUM(amount_cents) FROM expenses WHERE spent_on>=? AND spent_on<?),0) AS e) WHERE r=? AND e=? ON CONFLICT(month) DO NOTHING').bind(month,x.savingsBp,x.partnerABp,admin.uid,from,to,from,to,x.expectedRevenueCents,x.expectedExpensesCents),
     env.NEXORA_FINANCE_DB.prepare('SELECT month,revenue_cents AS revenueCents,expenses_cents AS expensesCents,savings_bp AS savingsBp,partner_a_bp AS partnerABp,closed_by AS closedBy,closed_at AS closedAt FROM finance_closures WHERE month=?').bind(month)
    ]);
-   const r=rows[1].results[0];if(!r||r.savingsBp!==x.savingsBp||r.partnerABp!==x.partnerABp)return json(409,{error:'closure_conflict',message:'El mes ya fue cerrado con otra distribución.'},origin);
+   const r=rows[1].results[0];if(!r||r.savingsBp!==x.savingsBp||r.partnerABp!==x.partnerABp||r.revenueCents!==x.expectedRevenueCents||r.expensesCents!==x.expectedExpensesCents)return json(409,{error:'closure_conflict',message:'El libro cambió o el mes ya fue cerrado con otros valores. Actualizá y verificá el cierre.'},origin);
    return json(rows[0].meta.changes?201:200,{...r,...allocation(r.revenueCents,r.expensesCents,r.savingsBp,r.partnerABp)},origin);
   }
   if(path==='/api/finance/report'&&request.method==='GET'){
