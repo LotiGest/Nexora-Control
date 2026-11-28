@@ -14,6 +14,7 @@ on:
       - 'commercial.css'
       - 'index.html'
       - 'tests/commercial.test.mjs'
+      - 'tests/commercial-company.test.mjs'
       - 'tests/commercial-reference-rates.test.mjs'
       - 'tests/commercial-trials.test.mjs'
       - 'tests/commercial-billing.test.mjs'
@@ -30,5 +31,5 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - run: node --check commercial-core.js && node --check commercial.js && node --check project-status.js && node --check project-status-core.js && node --check commercial-billing.js && node --check commercial-billing-core.js && node --check commercial-reference-rates.js && node --check commercial-trials-core.js && node --check commercial-trials.js && node --check finance-core.js && node --check finance-ui.js && node --check worker/nexora-finanzas/src/index.js && node --check worker/nexora-provision/src/plan.js
+      - run: node --check commercial-core.js && node --check commercial.js && node --check commercial-company-core.js && node --check commercial-companies.js && node --check project-status.js && node --check project-status-core.js && node --check commercial-billing.js && node --check commercial-billing-core.js && node --check commercial-reference-rates.js && node --check commercial-trials-core.js && node --check commercial-trials.js && node --check finance-core.js && node --check finance-ui.js && node --check worker/nexora-finanzas/src/index.js && node --check worker/nexora-provision/src/plan.js
       - run: node --test tests/*.test.mjs worker/nexora-licencias/tests/*.test.mjs worker/nexora-finanzas/tests/*.test.mjs worker/nexora-provision/tests/*.test.mjs

@@ -143,3 +143,31 @@ function ncAfterTrial(d,id) {
  let p = /databases/$(database)/documents/nexoraCommercialTrials/$(id);
  return !existsAfter(p) || d.initialDue >= getAfter(p).data.endsOn;
 }
+
+function ncOptionalString(v,n) {return v is string && v.size() <= n;}
+function ncCount(v) {return v == null || (v is int && v >= 0 && v <= 1000000);}
+function ncProfile(d,id) {
+ return d.keys().hasOnly(['product','clientKey','name','legalName','rtn','ownerName','address','ownerPhone','companyPhone','email','logoUrl','contactRole','facilityType','residentials','sellers','estimatedClients','doctors','analyzers','specialties','consultories','adminName','adminUsername','adminRole','notes','version','revisionKey','updatedBy','updatedAt'])
+ && ncProduct(d.product) && ncKey(d.clientKey) && id == d.product+'__'+d.clientKey
+ && ncLabel(d.name,100) && ncOptionalString(d.legalName,150) && (d.rtn == '' || (d.rtn is string && d.rtn.matches('^[0-9]{14}$')))
+ && ncOptionalString(d.ownerName,120) && ncOptionalString(d.address,250) && ncOptionalString(d.ownerPhone,30) && ncOptionalString(d.companyPhone,30) && ncOptionalString(d.email,150)
+ && ncOptionalString(d.logoUrl,350) && (d.logoUrl == '' || d.logoUrl.matches('^https://[^ ]+$'))
+ && ncOptionalString(d.contactRole,100) && ncOptionalString(d.facilityType,100)
+ && ncCount(d.residentials) && ncCount(d.sellers) && ncCount(d.estimatedClients) && ncCount(d.doctors) && ncCount(d.analyzers) && ncCount(d.specialties) && ncCount(d.consultories)
+ && (d.product == 'LOTIGEST' || (d.residentials == null && d.sellers == null && d.estimatedClients == null))
+ && (d.product == 'SIAC' || (d.doctors == null && d.analyzers == null))
+ && (d.product == 'SINDEX' || (d.specialties == null && d.consultories == null))
+ && ncOptionalString(d.adminName,120) && (d.adminUsername == '' || (d.adminUsername is string && d.adminUsername.matches('^[a-z0-9][a-z0-9._-]{2,49}$'))) && d.adminRole == 'admin'
+ && ncOptionalString(d.notes,500) && ncMeta(d);
+}
+match /nexoraCompanyProfiles/{id} {
+ allow get,list: if nexoraLicenseAdmin();
+ allow create: if nexoraLicenseAdmin() && ncProfile(request.resource.data,id) && request.resource.data.version == 1 && ncHasRevision('nexoraCompanyProfiles',id,request.resource.data);
+ allow update: if nexoraLicenseAdmin() && ncProfile(request.resource.data,id) && request.resource.data.version == resource.data.version + 1 && ncHasRevision('nexoraCompanyProfiles',id,request.resource.data);
+ allow delete: if false;
+ match /revisions/{rev} {
+  allow get,list: if nexoraLicenseAdmin();
+  allow create: if nexoraLicenseAdmin() && ncProfile(request.resource.data,id) && ncRevisionMatches('nexoraCompanyProfiles',id,rev,request.resource.data);
+  allow update,delete: if false;
+ }
+}

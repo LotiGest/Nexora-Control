@@ -22,3 +22,6 @@ Clasificación opcional de cada contrato (estándar/fundador/aliado), motivo obl
 
 ## Conversión guiada de prueba a contrato
 Desde cada prueba, abrir el acuerdo exacto para confirmación manual o abrir su calendario si ya fue acordado. No se cambia estado ni se guarda un calendario al pulsar estos accesos. Un acuerdo inactivo no genera alertas de conversión. La protección de reglas usa el estado posterior de las transacciones para impedir que una edición de prueba y la creación de calendario pasen juntas. Validación del emulador pendiente.
+
+## Registro de empresas
+Directorio independiente del contrato, con UUID aleatorio generado automáticamente y vínculo opcional a un contrato previo por el mismo ID. Datos empresariales y administrador solicitado, sin contraseña, datos particulares ni datos de pacientes. Campos específicos por producto. Logo como referencia HTTPS, sin subir ni descargar archivos; carga de logo en almacenamiento seguro pendiente. Los datos se guardan con revisión inmutable. Crear ficha no crea recursos, usuarios ni licencias. Requiere reglas y pruebas de Firebase antes de publicar.
