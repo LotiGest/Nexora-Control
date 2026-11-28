@@ -16,7 +16,7 @@ async function calendarFor(id,token,fetcher){const url='https://firestore.google
  function value(f){if(f?.stringValue!==undefined)return f.stringValue;if(f?.integerValue!==undefined)return Number(f.integerValue);if(f?.arrayValue)return (f.arrayValue.values||[]).map(value);if(f?.mapValue)return Object.fromEntries(Object.entries(f.mapValue.fields||{}).map(([k,v])=>[k,value(v)]));return undefined;}
  const c=Object.fromEntries(Object.entries(source).map(([k,v])=>[k,value(v)]));if(c.contractId!==id||!Array.isArray(c.lines))throw Error('Calendario inconsistente.');return c;
 }
-export function createFinanceWorker({verify=verifyFirebaseAdmin,fetcher=fetch}={}){return {async fetch(request,env={}){
+export function createFinanceWorker({verify=verifyFirebaseAdmin,fetcher=fetch,now=()=>new Date()}={}){return {async fetch(request,env={}){
  const url=new URL(request.url),origin=request.headers.get('origin'),path=url.pathname;
  if(origin&&origin!==ORIGIN)return json(403,{error:'forbidden_origin'},origin);
  if(request.method==='OPTIONS')return new Response(null,{status:204,headers:{'access-control-allow-origin':ORIGIN,'access-control-allow-headers':'authorization, content-type','access-control-allow-methods':'GET, POST, OPTIONS','vary':'Origin'}});
@@ -56,7 +56,7 @@ export function createFinanceWorker({verify=verifyFirebaseAdmin,fetcher=fetch}={
    return json(200,{closures:rows.results.map(r=>({...r,...allocation(r.revenueCents,r.expensesCents,r.savingsBp,r.partnerABp)}))},origin);
   }
   if(path==='/api/finance/close'&&request.method==='POST'){
-   const x=await body(request),today=new Intl.DateTimeFormat('sv-SE',{timeZone:'America/Tegucigalpa',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date()),month=validateCloseMonth(x.month,today);
+   const x=await body(request),today=new Intl.DateTimeFormat('sv-SE',{timeZone:'America/Tegucigalpa',year:'numeric',month:'2-digit',day:'2-digit'}).format(now()),month=validateCloseMonth(x.month,today);
    allocation(x.expectedRevenueCents,x.expectedExpensesCents,x.savingsBp,x.partnerABp);
    const from=month+'-01',to=addMonths(from,1);
    const rows=await env.NEXORA_FINANCE_DB.batch([
@@ -68,10 +68,10 @@ export function createFinanceWorker({verify=verifyFirebaseAdmin,fetcher=fetch}={
   }
   if(path==='/api/finance/report'&&request.method==='GET'){
    const from=isoDate(url.searchParams.get('from')),to=isoDate(url.searchParams.get('to'));if(to<from||Number(to.slice(0,4))-Number(from.slice(0,4))>1)throw Error('Rango máximo: dos años.');
-   const [payments,expenses,charges]=await Promise.all([
-    env.NEXORA_FINANCE_DB.prepare('SELECT p.id,p.contract_id AS contractId,p.charge_id AS chargeId,p.amount_cents AS amountCents,p.paid_on AS date,p.reference,p.recorded_by AS recordedBy,c.company FROM payments p JOIN charges c ON c.contract_id=p.contract_id AND c.charge_id=p.charge_id WHERE p.paid_on BETWEEN ? AND ? ORDER BY p.paid_on,p.id LIMIT 10000').bind(from,to).all(),
-    env.NEXORA_FINANCE_DB.prepare('SELECT id,category,amount_cents AS amountCents,spent_on AS date,reference,recorded_by AS recordedBy FROM expenses WHERE spent_on BETWEEN ? AND ? ORDER BY spent_on,id LIMIT 10000').bind(from,to).all(),
-    env.NEXORA_FINANCE_DB.prepare('SELECT contract_id AS contractId,charge_id AS chargeId,product,company,due_date AS due,kind,amount_cents AS amountCents,paid_cents AS paidCents FROM charges WHERE due_date BETWEEN ? AND ? ORDER BY due_date LIMIT 10000').bind(from,to).all()
+   const [payments,expenses,charges]=await env.NEXORA_FINANCE_DB.batch([
+    env.NEXORA_FINANCE_DB.prepare('SELECT p.id,p.contract_id AS contractId,p.charge_id AS chargeId,p.amount_cents AS amountCents,p.paid_on AS date,p.reference,p.recorded_by AS recordedBy,c.company FROM payments p JOIN charges c ON c.contract_id=p.contract_id AND c.charge_id=p.charge_id WHERE p.paid_on BETWEEN ? AND ? ORDER BY p.paid_on,p.id LIMIT 10000').bind(from,to),
+    env.NEXORA_FINANCE_DB.prepare('SELECT id,category,amount_cents AS amountCents,spent_on AS date,reference,recorded_by AS recordedBy FROM expenses WHERE spent_on BETWEEN ? AND ? ORDER BY spent_on,id LIMIT 10000').bind(from,to),
+    env.NEXORA_FINANCE_DB.prepare('SELECT contract_id AS contractId,charge_id AS chargeId,product,company,due_date AS due,kind,amount_cents AS amountCents,paid_cents AS paidCents FROM charges WHERE due_date BETWEEN ? AND ? ORDER BY due_date LIMIT 10000').bind(from,to)
    ]);
    if([payments,expenses,charges].some(x=>x.results.length>=10000))throw Error('Informe demasiado grande; consultá un período menor.');
    const sum=rows=>rows.reduce((n,r)=>n+r.amountCents,0),revenueCents=sum(payments.results),expensesCents=sum(expenses.results);
