@@ -48,3 +48,5 @@ Vista previa de renovación: compara doce meses desde fecha propuesta, calendari
 
 ## Fase 5 — licencias comerciales
 Nuevo modelo versionado separado de las licencias operativas SIAC existentes. Emisión desde acuerdo y calendario coincidentes, vigencia civil inclusiva, gracia 0–30 días, suspensión, reactivación y extensión de vencimiento sin sustituir módulos. Las condiciones se congelan; cambios de tarifa requieren revisar acuerdo y calendario. Todas las acciones requieren motivo y revisión inmutable. No es un token de acceso ni modifica instalaciones: aplicación remota sigue pendiente de adaptadores específicos de SIAC, SINDEX y LotiGest y QA de autenticación. Las reglas son propuestas para emulador, no desplegadas.
+
+Panel de contratos: emisión, renovación de vigencia, suspensión/reactivación, estado por fechas, módulos comerciales y acceso al historial. Escrituras transaccionales con revisión de contrato/calendario y versión; suscripción independiente, sin bloquear catálogo si no está disponible. Pruebas unitarias y emulador de permisos añadidas. No aplica licencias operativas.

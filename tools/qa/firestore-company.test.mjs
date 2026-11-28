@@ -76,3 +76,21 @@ test('renewal proposals require authorized versioned writes, preserve calendar a
  assert.equal((await getDoc(h)).data().version,3);
  assert.deepEqual((await getDoc(cal)).data().lines,[line]);
 });
+
+test('commercial license lifecycle protects modules, versions and calendar; denies outsiders',async()=>{
+ const db=admin(),k='license-qa',cid='LOTIGEST__'+k,head=doc(db,'nexoraCommercialContracts',cid),cal=doc(db,'nexoraBillingCalendars',cid);
+ const line={product:'LOTIGEST',code:'base',name:'Base',kind:'plan',catalogVersion:1,initialCents:1000,feeCents:500,cadence:'monthly',cycles:0};
+ const contract={product:'LOTIGEST',clientKey:k,name:'QA licencia',reference:'QA',status:'agreed',lines:[line],version:1,revisionKey:rev(201),updatedBy:'qa-admin-a',updatedAt:serverTimestamp()};
+ const batch=writeBatch(db);batch.set(head,contract);batch.set(doc(head,'revisions',contract.revisionKey),contract);await assertSucceeds(batch.commit());
+ await assertSucceeds(setDoc(cal,{contractId:cid,product:'LOTIGEST',clientKey:k,name:contract.name,reference:'QA',contractVersion:1,initialDue:'2026-01-01',firstDue:'2026-02-01',lines:[line],createdBy:'qa-admin-a',createdAt:serverTimestamp()}));
+ const day=n=>new Date(Date.now()+n*86400000).toISOString().slice(0,10),date=s=>new Date(s+'T00:00:00Z');
+ const start=day(2),end=day(32),grace=day(39);
+ const row={contractId:cid,product:'LOTIGEST',clientKey:k,contractVersion:1,lines:[line],startsOn:start,expiresOn:end,graceDays:7,graceUntil:grace,startsAt:date(start),expiresAt:date(end),graceAt:date(grace),state:'issued',action:'issue',reason:'QA',version:1,revisionKey:rev(202),updatedBy:'qa-admin-a',updatedAt:serverTimestamp()};
+ const h=doc(db,'nexoraCommercialLicenses',cid),save=(store,value)=>{const target=doc(store,'nexoraCommercialLicenses',cid),b=writeBatch(store);b.set(target,value);b.set(doc(target,'revisions',value.revisionKey),value);return b.commit();};
+ await assertFails(setDoc(h,row));await assertFails(save(admin('qa-outsider'),{...row,updatedBy:'qa-outsider'}));await assertFails(save(db,{...row,lines:[{...line,feeCents:1}]}));await assertFails(save(db,{...row,graceDays:31}));await assertSucceeds(save(db,row));
+ const suspended={...row,state:'suspended',action:'suspend',version:2,revisionKey:rev(203),updatedBy:'qa-admin-b'};
+ await assertSucceeds(save(admin('qa-admin-b'),suspended));await assertFails(save(db,{...row,action:'renew',version:3,revisionKey:rev(204)}));
+ const resumed={...row,action:'resume',version:3,revisionKey:rev(204)};await assertSucceeds(save(db,resumed));
+ const extended=day(62),extendedGrace=day(69),renewed={...resumed,expiresOn:extended,expiresAt:date(extended),graceUntil:extendedGrace,graceAt:date(extendedGrace),action:'renew',version:4,revisionKey:rev(205)};
+ await assertFails(save(db,{...renewed,lines:[{...line,feeCents:1}]}));await assertSucceeds(save(db,renewed));await assertFails(deleteDoc(h));await assertFails(deleteDoc(doc(h,'revisions',rev(202))));await assertFails(getDoc(doc(admin('qa-outsider'),'nexoraCommercialLicenses',cid)));assert.equal((await getDoc(h)).data().version,4);
+});
