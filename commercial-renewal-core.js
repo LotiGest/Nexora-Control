@@ -13,7 +13,7 @@ export function createRenewal(contract,calendar,raw,today){
 }
 export function renewalState(row,contract,calendar,today){
  isoDate(today);if(row.state==='withdrawn')return 'withdrawn';
- if(contract?.status!=='agreed'||contract.version!==row.contractVersion||calendar?.contractVersion!==row.calendarVersion)return 'stale';
+ if(contract?.status!=='agreed'||contract.version!==row.contractVersion||calendar?.contractVersion!==row.calendarVersion||calendar?.contractId!==row.contractId)return 'stale';
  return row.effectiveOn<=today?'due-review':'pending-review';
 }
 

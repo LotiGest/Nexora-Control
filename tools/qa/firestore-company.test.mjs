@@ -94,3 +94,16 @@ test('commercial license lifecycle protects modules, versions and calendar; deni
  const extended=day(62),extendedGrace=day(69),renewed={...resumed,expiresOn:extended,expiresAt:date(extended),graceUntil:extendedGrace,graceAt:date(extendedGrace),action:'renew',version:4,revisionKey:rev(205)};
  await assertFails(save(db,{...renewed,lines:[{...line,feeCents:1}]}));await assertSucceeds(save(db,renewed));await assertFails(deleteDoc(h));await assertFails(deleteDoc(doc(h,'revisions',rev(202))));await assertFails(getDoc(doc(admin('qa-outsider'),'nexoraCommercialLicenses',cid)));assert.equal((await getDoc(h)).data().version,4);
 });
+
+test('atomic contract changes cannot issue a license against superseded terms',async()=>{
+ const db=admin(),k='audit-atomic',cid='LOTIGEST__'+k,head=doc(db,'nexoraCommercialContracts',cid),cal=doc(db,'nexoraBillingCalendars',cid),license=doc(db,'nexoraCommercialLicenses',cid);
+ const line={product:'LOTIGEST',code:'base',name:'Base',kind:'plan',catalogVersion:1,initialCents:1000,feeCents:500,cadence:'monthly',cycles:0};
+ const contract={product:'LOTIGEST',clientKey:k,name:'QA auditoría',reference:'QA',status:'agreed',lines:[line],version:1,revisionKey:rev(301),updatedBy:'qa-admin-a',updatedAt:serverTimestamp()};
+ const first=writeBatch(db);first.set(head,contract);first.set(doc(head,'revisions',contract.revisionKey),contract);await assertSucceeds(first.commit());
+ const calendar={contractId:cid,product:'LOTIGEST',clientKey:k,name:contract.name,reference:'QA',contractVersion:1,initialDue:'2026-01-01',firstDue:'2026-02-01',lines:[line],createdBy:'qa-admin-a',createdAt:serverTimestamp()};await assertSucceeds(setDoc(cal,calendar));
+ const day=n=>new Date(Date.now()+n*86400000).toISOString().slice(0,10),date=s=>new Date(s+'T00:00:00Z'),start=day(2),end=day(32);
+ const row={contractId:cid,product:'LOTIGEST',clientKey:k,contractVersion:1,lines:[line],startsOn:start,expiresOn:end,graceDays:0,graceUntil:end,startsAt:date(start),expiresAt:date(end),graceAt:date(end),state:'issued',action:'issue',reason:'QA',version:1,revisionKey:rev(302),updatedBy:'qa-admin-a',updatedAt:serverTimestamp()};
+ const newer={...contract,status:'inactive',version:2,revisionKey:rev(303)};
+ const invalid=writeBatch(db);invalid.set(head,newer);invalid.set(doc(head,'revisions',newer.revisionKey),newer);invalid.set(license,row);invalid.set(doc(license,'revisions',row.revisionKey),row);await assertFails(invalid.commit());
+ assert.equal((await getDoc(head)).data().version,1);assert.equal((await getDoc(license)).exists(),false);
+});

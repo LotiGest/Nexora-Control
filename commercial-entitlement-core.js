@@ -11,6 +11,7 @@ export function commercialLicenseStatus(row,today){
  isoDate(today);if(!row)return 'unissued';const p=licensePeriod(row.startsOn,row.expiresOn,row.graceDays);if(p.graceUntil!==row.graceUntil||!['issued','suspended'].includes(row.state))throw Error('Licencia comercial inconsistente.');
  if(row.state==='suspended')return 'suspended';if(today<p.startsOn)return 'scheduled';if(today<=p.expiresOn)return 'active';if(today<=p.graceUntil)return 'grace';return 'expired';
 }
+const agreementMatches=(contract,calendar,old)=>{if(!contract||!calendar||contract.status!=='agreed'||contract.version!==old.contractVersion||calendar.contractVersion!==old.contractVersion||calendar.contractId!==old.contractId)return false;try{const c=normalizeContract(contract),lines=JSON.stringify(old.lines.map(normalizeLine));return contractId(c.product,c.clientKey)===old.contractId&&JSON.stringify(c.lines)===lines&&JSON.stringify(calendar.lines.map(normalizeLine))===lines;}catch{return false;}};
 const reasonOf=v=>{const s=String(v??'').trim();if(!s||s.length>500)throw Error('Indicá un motivo de hasta 500 caracteres.');return s;};
 export function licenseChange({contract,calendar,previous,action,input,today}){
  isoDate(today);const reason=reasonOf(input.reason);
@@ -27,9 +28,9 @@ export function licenseChange({contract,calendar,previous,action,input,today}){
  const {contractId:id,product,clientKey,contractVersion,lines,startsOn,expiresOn,graceDays,graceUntil,state}=previous;
  const base={contractId:id,product,clientKey,contractVersion,lines:lines.map(normalizeLine),startsOn,expiresOn,graceDays,graceUntil,state};
  if(action==='suspend'&&state==='issued')return {...base,state:'suspended',action,reason};
- if(action==='resume'&&state==='suspended'&&today<=graceUntil&&contract?.status==='agreed'&&contract.version===contractVersion)return {...base,state:'issued',action,reason};
+ if(action==='resume'&&state==='suspended'&&today<=graceUntil&&agreementMatches(contract,calendar,previous))return {...base,state:'issued',action,reason};
  if(action==='renew'&&['issued','suspended'].includes(state)){
-  if(contract?.status!=='agreed'||contract.version!==contractVersion||calendar?.contractVersion!==contractVersion)throw Error('Cambio de condiciones: revisá primero el acuerdo y calendario.');
+  if(!agreementMatches(contract,calendar,previous))throw Error('Cambio de condiciones: revisá primero el acuerdo y calendario.');
   const p=licensePeriod(startsOn,input.expiresOn,input.graceDays);
   if(p.expiresOn<=expiresOn||p.expiresOn<today)throw Error('El nuevo vencimiento debe extender el anterior y no estar vencido.');
   return {...base,...p,action,reason};

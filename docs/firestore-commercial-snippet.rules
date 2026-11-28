@@ -55,7 +55,7 @@ function ncHasRevision(col,id,d) {
 }
 function ncRevisionMatches(col,id,rev,d) {
  let p = /databases/$(database)/documents/$(col)/$(id);
- return rev == d.revisionKey && getAfter(p).data == d;
+ return rev == d.revisionKey && getAfter(p).data == d && (!exists(p) || get(p).data.revisionKey != rev);
 }
 match /nexoraRateCatalog/{id} {
  allow get,list: if nexoraLicenseAdmin();
@@ -103,7 +103,7 @@ match /nexoraProjectStatus/{id} {
 }
 
 function ncCalendar(d,id) {
- let c = get(/databases/$(database)/documents/nexoraCommercialContracts/$(id)).data;
+ let c = getAfter(/databases/$(database)/documents/nexoraCommercialContracts/$(id)).data;
  return d.keys().hasOnly(['contractId','product','clientKey','name','reference','contractVersion','initialDue','firstDue','lines','createdBy','createdAt'])
  && d.contractId == id && c.status == 'agreed' && d.product == c.product && d.clientKey == c.clientKey
  && d.name == c.name && d.reference == c.reference && d.contractVersion == c.version && d.lines == c.lines
@@ -121,7 +121,7 @@ match /nexoraBillingCalendars/{id} {
 function ncPad(n) {return (n < 10 ? '0' : '') + string(n);}
 function ncDateText(t) {return string(t.year()) + '-' + ncPad(t.month()) + '-' + ncPad(t.day());}
 function ncTrial(d,id) {
- let c = get(/databases/$(database)/documents/nexoraCommercialContracts/$(id)).data;
+ let c = getAfter(/databases/$(database)/documents/nexoraCommercialContracts/$(id)).data;
  return d.keys().hasOnly(['contractId','startsOn','days','endsOn','startAt','endAt','version','revisionKey','updatedBy','updatedAt'])
  && d.contractId == id && c.status in ['draft','agreed'] && d.days is int && d.days >= 1 && d.days <= 365
  && d.startAt is timestamp && d.endAt is timestamp && d.startAt == timestamp.date(d.startAt.year(),d.startAt.month(),d.startAt.day())
@@ -206,8 +206,8 @@ match /nexoraInstallationD1Claims/{id} {
 
 // Renewal requests are proposals only, never an authorization to alter billing or licenses.
 function ncRenewal(d,id) {
- let c = get(/databases/$(database)/documents/nexoraCommercialContracts/$(id)).data;
- let b = get(/databases/$(database)/documents/nexoraBillingCalendars/$(id)).data;
+ let c = getAfter(/databases/$(database)/documents/nexoraCommercialContracts/$(id)).data;
+ let b = getAfter(/databases/$(database)/documents/nexoraBillingCalendars/$(id)).data;
  return d.keys().hasOnly(['contractId','product','clientKey','contractVersion','calendarVersion','effectiveOn','effectiveAt','reason','lines','state','version','revisionKey','updatedBy','updatedAt'])
  && d.contractId == id && c.status == 'agreed' && d.product == c.product && d.clientKey == c.clientKey
  && d.contractVersion == c.version && d.calendarVersion == b.contractVersion && d.lines == c.lines
@@ -252,8 +252,8 @@ function ncEntitlement(d,id) {
  && d.state in ['issued','suspended'] && d.action in ['issue','renew','suspend','resume'] && ncLabel(d.reason,500) && ncEntitlementPeriod(d) && ncMeta(d);
 }
 function ncEntitlementAgreement(d,id) {
- let c = get(/databases/$(database)/documents/nexoraCommercialContracts/$(id)).data;
- let b = get(/databases/$(database)/documents/nexoraBillingCalendars/$(id)).data;
+ let c = getAfter(/databases/$(database)/documents/nexoraCommercialContracts/$(id)).data;
+ let b = getAfter(/databases/$(database)/documents/nexoraBillingCalendars/$(id)).data;
  return c.status == 'agreed' && c.version == d.contractVersion && b.contractVersion == d.contractVersion && c.lines == d.lines && b.lines == d.lines && d.startsOn >= b.initialDue;
 }
 function ncEntitlementTransition(d,old,id) {

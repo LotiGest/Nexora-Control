@@ -52,3 +52,6 @@ Nuevo modelo versionado separado de las licencias operativas SIAC existentes. Em
 Panel de contratos: emisión, renovación de vigencia, suspensión/reactivación, estado por fechas, módulos comerciales y acceso al historial. Escrituras transaccionales con revisión de contrato/calendario y versión; suscripción independiente, sin bloquear catálogo si no está disponible. Pruebas unitarias y emulador de permisos añadidas. No aplica licencias operativas.
 
 Refuerzo fase 5: licencia suspendida y vencida puede extender vigencia sin quitar suspensión; reactivar sigue siendo un paso separado, exige vigencia/gracia y acuerdo coincidente. Comparación de líneas normalizadas evita falsos conflictos por orden de propiedades en Firestore. Pruebas nuevas pendientes.
+
+## Auditoría 1 — inicio
+Baseline 8771733: workflow 46138607294 completado, 103/103 pruebas comerciales y 4/4 de emulador, cero fallos, omitidos o cancelados. Hallazgo: reglas relacionadas verificaban estado anterior de documentos, no el estado final de una escritura atómica; se cambió a getAfter en acuerdos/calendarios y se refuerza vínculo revisión/cabecera. Reanudar/renovar licencia exige ahora coincidencia de identidad, versión y conceptos en ambas fuentes. Pruebas añadidas, pendientes de confirmación. Sin publicación real.
