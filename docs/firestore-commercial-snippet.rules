@@ -82,3 +82,21 @@ match /nexoraCommercialContracts/{id} {
   allow update,delete: if false;
  }
 }
+
+function ncProject(d,id) {
+ return d.keys().hasOnly(['id','progress','stage','release','notes','version','revisionKey','updatedBy','updatedAt'])
+ && id in ['siac','sindex','lotigest','dvolada'] && d.id == id && d.progress is int && d.progress >= 0 && d.progress <= 100
+ && d.stage in ['development','testing','production','maintenance','paused'] && d.release is string && d.release.size() <= 60
+ && ncLabel(d.notes,500) && ncMeta(d);
+}
+match /nexoraProjectStatus/{id} {
+ allow get,list: if nexoraLicenseAdmin();
+ allow create: if nexoraLicenseAdmin() && ncProject(request.resource.data,id) && request.resource.data.version == 1 && ncHasRevision('nexoraProjectStatus',id,request.resource.data);
+ allow update: if nexoraLicenseAdmin() && ncProject(request.resource.data,id) && request.resource.data.version == resource.data.version + 1 && ncHasRevision('nexoraProjectStatus',id,request.resource.data);
+ allow delete: if false;
+ match /revisions/{rev} {
+  allow get,list: if nexoraLicenseAdmin();
+  allow create: if nexoraLicenseAdmin() && ncProject(request.resource.data,id) && ncRevisionMatches('nexoraProjectStatus',id,rev,request.resource.data);
+  allow update,delete: if false;
+ }
+}
