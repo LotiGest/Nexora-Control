@@ -263,7 +263,7 @@ function ncEntitlementTransition(d,old,id) {
  && changed.hasOnly(['state','action','reason','version','revisionKey','updatedBy','updatedAt']))
  || (d.action == 'resume' && old.state == 'suspended' && d.state == 'issued' && today <= d.graceUntil && ncEntitlementAgreement(d,id)
  && changed.hasOnly(['state','action','reason','version','revisionKey','updatedBy','updatedAt']))
- || (d.action == 'renew' && old.state == 'issued' && d.state == 'issued' && d.expiresOn > old.expiresOn && d.expiresOn >= today && ncEntitlementAgreement(d,id)
+ || (d.action == 'renew' && d.state == old.state && d.expiresOn > old.expiresOn && d.expiresOn >= today && ncEntitlementAgreement(d,id)
  && changed.hasOnly(['expiresOn','expiresAt','graceDays','graceUntil','graceAt','action','reason','version','revisionKey','updatedBy','updatedAt']));
 }
 match /nexoraCommercialLicenses/{id} {
